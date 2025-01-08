@@ -1,9 +1,9 @@
 [package]
 name = "spl-slashing"
-version = "0.1.0"
+version = "0.0.1"
 description = "Solana Program Library Slashing"
-authors = ["Solana Labs Maintainers <maintainers@solanalabs.com>"]
-repository = "https://github.com/solana-labs/solana-program-library"
+authors = ["Anza Maintainers <maintainers@anza.xyz>"]
+repository = "https://github.com/solana-program/slashing"
 license = "Apache-2.0"
 edition = "2021"
 
@@ -24,7 +24,6 @@ serde = "1.0.217" # must match the serde_derive version, see https://github.com/
 serde_bytes = "0.11.15"
 serde_derive = "1.0.210" # must match the serde version, see https://github.com/serde-rs/serde/issues/2584#issuecomment-1685252251
 serde_with = { version = "3.12.0", default-features = false }
-
 thiserror = "2.0"
 spl-pod = "0.5.0"
 
@@ -44,9 +43,5 @@ crate-type = ["cdylib", "lib"]
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]
 
-[lints.rust.unexpected_cfgs]
-level = "warn"
-check-cfg = [
-    'cfg(target_os, values("solana"))',
-    'cfg(feature, values("frozen-abi", "no-entrypoint"))',
-]
+[lints]
+workspace = true

@@ -99,8 +99,8 @@ impl<'a> SlashingProofData<'a> for DuplicateBlockProofData<'a> {
 ///       equal payloads excluding the retransmitter signature
 ///     - If `shred1` and `shred2` do not share the same index and are data
 ///       shreds verify that they indicate an index conflict. One of them must
-///       be the LAST_SHRED_IN_SLOT, however the other shred must have a higher
-///       index.
+///       be the `LAST_SHRED_IN_SLOT`, however the other shred must have a
+///       higher index.
 ///     - If `shred1` and `shred2` do not share the same index and are coding
 ///       shreds verify that they have conflicting erasure metas
 fn check_shreds(slot: Slot, shred1: &Shred, shred2: &Shred) -> Result<(), SlashingError> {

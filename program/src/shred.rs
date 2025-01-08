@@ -348,7 +348,7 @@ impl<'a> Shred<'a> {
     }
 
     /// Returns true if the erasure metas of the other shred matches ours.
-    /// Assumes that other shred has the same fec set index as ours.
+    /// Assumes that other shred has the same FEC set index as ours.
     pub(crate) fn check_erasure_consistency(&self, other: &Shred) -> Result<bool, SlashingError> {
         debug_assert!(self.fec_set_index() == other.fec_set_index());
         debug_assert!(self.shred_type == ShredType::Code);
