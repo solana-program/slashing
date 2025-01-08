@@ -1,6 +1,6 @@
 [package]
 name = "spl-slashing"
-version = "0.0.1"
+version = "0.1.0"
 description = "Solana Program Library Slashing"
 authors = ["Anza Maintainers <maintainers@anza.xyz>"]
 repository = "https://github.com/solana-program/slashing"
