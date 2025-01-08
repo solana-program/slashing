@@ -26,7 +26,7 @@ serde_derive = "1.0.210" # must match the serde version, see https://github.com/
 serde_with = { version = "3.12.0", default-features = false }
 
 thiserror = "2.0"
-spl-pod = { version = "0.5.0", path = "../../libraries/pod" }
+spl-pod = "0.5.0"
 
 [dev-dependencies]
 lazy_static = "1.5.0"
@@ -35,7 +35,7 @@ solana-sdk = "2.1.0"
 solana-ledger = "2.1.0"
 solana-entry = "2.1.0"
 solana-client = "2.1.0"
-spl-record = { version = "0.3.0", path = "../../record/program" }
+spl-record = "0.3.0"
 rand = "0.8.5"
 
 [lib]
@@ -44,5 +44,9 @@ crate-type = ["cdylib", "lib"]
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]
 
-[lints]
-workspace = true
+[lints.rust.unexpected_cfgs]
+level = "warn"
+check-cfg = [
+    'cfg(target_os, values("solana"))',
+    'cfg(feature, values("frozen-abi", "no-entrypoint"))',
+]
