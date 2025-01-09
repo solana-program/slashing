@@ -3,14 +3,80 @@ use {
     crate::{
         error::SlashingError,
         shred::{Shred, ShredType},
+        sigverify::SignatureVerification,
         state::{ProofType, SlashingProofData},
     },
     bytemuck::try_from_bytes,
-    solana_program::{clock::Slot, msg, pubkey::Pubkey},
+    solana_program::{
+        account_info::{next_account_info, AccountInfo},
+        clock::Slot,
+        hash::Hash,
+        msg,
+        pubkey::Pubkey,
+    },
+    solana_signature::SIGNATURE_BYTES,
     spl_pod::primitives::PodU32,
+    std::slice::Iter,
 };
 
+/// The verification instruction occurs immediately before the slashing
+/// instruction
+const SIGVERIFY_INSTRUCTION_RELATIVE_INDEX: i64 = -1;
+/// Both shreds are verified in the same instruction
+const NUM_VERIFICATIONS_IN_INSTRUCTION: usize = 2;
+
+#[repr(C)]
+#[derive(Clone, Copy, PartialEq, Eq)]
+/// Signature verification context required for duplicate block
+/// proof verification
+pub struct DuplicateBlockProofContext<'a> {
+    pub(crate) expected_pubkey: &'a Pubkey,
+    pub(crate) expected_shred1_merkle_root: &'a Hash,
+    pub(crate) expected_shred2_merkle_root: &'a Hash,
+    pub(crate) expected_shred1_signature: &'a [u8; SIGNATURE_BYTES],
+    pub(crate) expected_shred2_signature: &'a [u8; SIGNATURE_BYTES],
+}
+
+impl<'a> DuplicateBlockProofContext<'a> {
+    fn unpack_context<'b>(
+        instruction_data: &'a [u8],
+        instructions_sysvar: &'a AccountInfo<'b>,
+    ) -> Result<Self, SlashingError> {
+        let signature_verifications =
+            SignatureVerification::inspect_verifications::<{ NUM_VERIFICATIONS_IN_INSTRUCTION }>(
+                instruction_data,
+                instructions_sysvar,
+                SIGVERIFY_INSTRUCTION_RELATIVE_INDEX,
+            )?;
+
+        let expected_shred1_merkle_root: &'a Hash =
+            bytemuck::try_from_bytes(signature_verifications[0].message)
+                .map_err(|_| SlashingError::InvalidSignatureVerification)?;
+        let expected_shred2_merkle_root: &'a Hash =
+            bytemuck::try_from_bytes(signature_verifications[1].message)
+                .map_err(|_| SlashingError::InvalidSignatureVerification)?;
+
+        if signature_verifications[0].pubkey != signature_verifications[1].pubkey {
+            msg!(
+                "Signature verification instruction was for 2 different pubkeys {} vs {}",
+                signature_verifications[0].pubkey,
+                signature_verifications[1].pubkey,
+            );
+            return Err(SlashingError::InvalidSignatureVerification);
+        }
+
+        Ok(Self {
+            expected_pubkey: signature_verifications[0].pubkey,
+            expected_shred1_merkle_root,
+            expected_shred2_merkle_root,
+            expected_shred1_signature: signature_verifications[0].signature,
+            expected_shred2_signature: signature_verifications[1].signature,
+        })
+    }
+}
+
 /// Proof of a duplicate block violation
+#[derive(Clone, Copy)]
 pub struct DuplicateBlockProofData<'a> {
     /// Shred signed by a leader
     pub shred1: &'a [u8],
@@ -44,27 +110,20 @@ impl<'a> DuplicateBlockProofData<'a> {
 
 impl<'a> SlashingProofData<'a> for DuplicateBlockProofData<'a> {
     const PROOF_TYPE: ProofType = ProofType::DuplicateBlockProof;
+    type Context = DuplicateBlockProofContext<'a>;
 
-    fn verify_proof(self, slot: Slot, _node_pubkey: &Pubkey) -> Result<(), SlashingError> {
-        // TODO: verify through instruction inspection that the shreds were sigverified
-        // earlier in this transaction.
-        // Ed25519 Singature verification is performed on the merkle root:
-        // node_pubkey.verify_strict(merkle_root, signature).
-        // We will verify that the pubkey merkle root and signature match the shred and
-        // that the verification was successful.
-        let shred1 = Shred::new_from_payload(self.shred1)?;
-        let shred2 = Shred::new_from_payload(self.shred2)?;
-        check_shreds(slot, &shred1, &shred2)
-    }
-
-    fn unpack(data: &'a [u8]) -> Result<Self, SlashingError>
+    fn unpack<'b>(
+        proof_account_data: &'a [u8],
+        instruction_data: &'a [u8],
+        account_info_iter: &'a mut Iter<'_, AccountInfo<'b>>,
+    ) -> Result<(Self, Self::Context), SlashingError>
     where
         Self: Sized,
     {
-        if data.len() < Self::LENGTH_SIZE {
+        if proof_account_data.len() < Self::LENGTH_SIZE {
             return Err(SlashingError::ProofBufferTooSmall);
         }
-        let (length1, data) = data.split_at(Self::LENGTH_SIZE);
+        let (length1, data) = proof_account_data.split_at(Self::LENGTH_SIZE);
         let shred1_length = try_from_bytes::<PodU32>(length1)
             .map_err(|_| SlashingError::ProofBufferDeserializationError)?;
         let shred1_length = u32::from(*shred1_length) as usize;
@@ -86,7 +145,25 @@ impl<'a> SlashingProofData<'a> for DuplicateBlockProofData<'a> {
             return Err(SlashingError::ProofBufferTooSmall);
         }
 
-        Ok(Self { shred1, shred2 })
+        let instructions_sysvar = next_account_info(account_info_iter)
+            .map_err(|_| SlashingError::MissingInstructionsSysvar)?;
+        let context =
+            DuplicateBlockProofContext::unpack_context(instruction_data, instructions_sysvar)?;
+
+        Ok((Self { shred1, shred2 }, context))
+    }
+
+    fn verify_proof(
+        self,
+        context: Self::Context,
+        slot: Slot,
+        node_pubkey: &Pubkey,
+    ) -> Result<(), SlashingError> {
+        let shred1 = Shred::new_from_payload(self.shred1)?;
+        let shred2 = Shred::new_from_payload(self.shred2)?;
+
+        sigverify_shreds(&context, node_pubkey, &shred1, &shred2)?;
+        check_shreds(slot, &shred1, &shred2)
     }
 }
 
@@ -243,17 +320,82 @@ fn check_shreds(slot: Slot, shred1: &Shred, shred2: &Shred) -> Result<(), Slashi
     Err(SlashingError::InvalidErasureMetaConflict)
 }
 
+/// Verify that `shred1` and `shred2` are correctly signed by `node_pubkey`.
+/// Leader's sign the merkle root of each shred with their pubkey.
+/// We use the context returned via instruction introspection to verify that
+/// instructions representing:
+///     - `node_pubkey.verify(shred1.signature, shred1.merkle_root)`
+///     - `node_pubkey.verify(shred2.signature, shred2.merkle_root)`
+/// were executed successfully
+fn sigverify_shreds(
+    context: &DuplicateBlockProofContext,
+    node_pubkey: &Pubkey,
+    shred1: &Shred,
+    shred2: &Shred,
+) -> Result<(), SlashingError> {
+    if context.expected_pubkey != node_pubkey {
+        msg!(
+            "Signature verification pubkey {} mismatches node pubkey {}",
+            context.expected_pubkey,
+            node_pubkey,
+        );
+        return Err(SlashingError::SignatureVerificationMismatch);
+    }
+
+    if *context.expected_shred1_merkle_root != shred1.merkle_root()? {
+        msg!(
+            "First signature verification message {} mismatches shred1 merkle root {}",
+            context.expected_shred1_merkle_root,
+            shred1.merkle_root()?,
+        );
+        return Err(SlashingError::SignatureVerificationMismatch);
+    }
+    if *context.expected_shred2_merkle_root != shred2.merkle_root()? {
+        msg!(
+            "Second signature verification message {} mismatches shred2 merkle root {}",
+            context.expected_shred2_merkle_root,
+            shred2.merkle_root()?,
+        );
+        return Err(SlashingError::SignatureVerificationMismatch);
+    }
+
+    if context.expected_shred1_signature != shred1.signature()? {
+        msg!(
+            "First signature verification signature {:?} mismatches shred1 signature {:?}",
+            context.expected_shred1_signature,
+            shred1.signature()?,
+        );
+        return Err(SlashingError::SignatureVerificationMismatch);
+    }
+    if context.expected_shred2_signature != shred2.signature()? {
+        msg!(
+            "Second signature verification signature {:?} mismatches shred2 signature {:?}",
+            context.expected_shred2_signature,
+            shred2.signature()?,
+        );
+        return Err(SlashingError::SignatureVerificationMismatch);
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use {
         super::*,
-        crate::shred::{
-            tests::{new_rand_coding_shreds, new_rand_data_shred, new_rand_shreds},
-            SIZE_OF_SIGNATURE,
+        crate::{
+            instruction::{construct_instructions_and_sysvar, DuplicateBlockProofSigverifyData},
+            shred::{
+                tests::{new_rand_coding_shreds, new_rand_data_shred, new_rand_shreds},
+                SIZE_OF_SIGNATURE,
+            },
         },
         rand::Rng,
         solana_ledger::shred::{Shred as SolanaShred, Shredder},
-        solana_sdk::signature::{Keypair, Signature, Signer},
+        solana_sdk::{
+            signature::{Keypair, Signature, Signer},
+            sysvar::instructions,
+        },
         std::sync::Arc,
     };
 
@@ -263,19 +405,82 @@ mod tests {
     const VERSION: u16 = 0;
 
     fn generate_proof_data<'a>(
+        leader: &'a Pubkey,
         shred1: &'a SolanaShred,
         shred2: &'a SolanaShred,
-    ) -> DuplicateBlockProofData<'a> {
-        DuplicateBlockProofData {
-            shred1: shred1.payload().as_slice(),
-            shred2: shred2.payload().as_slice(),
-        }
+    ) -> (DuplicateBlockProofData<'a>, DuplicateBlockProofContext<'a>) {
+        // Hack to simulate the merkle roots being stored in instruction data
+        let expected_shred1_merkle_root =
+            unsafe { &*Box::into_raw(Box::new(shred1.merkle_root().unwrap_or_default())) };
+        let expected_shred2_merkle_root =
+            unsafe { &*Box::into_raw(Box::new(shred2.merkle_root().unwrap_or_default())) };
+        let context = DuplicateBlockProofContext {
+            expected_pubkey: leader,
+            expected_shred1_merkle_root,
+            expected_shred2_merkle_root,
+            expected_shred1_signature: shred1.signature().as_ref().try_into().unwrap(),
+            expected_shred2_signature: shred2.signature().as_ref().try_into().unwrap(),
+        };
+        (
+            DuplicateBlockProofData {
+                shred1: shred1.payload().as_slice(),
+                shred2: shred2.payload().as_slice(),
+            },
+            context,
+        )
+    }
+
+    #[test]
+    fn test_unpack_context() {
+        let node_pubkey = Pubkey::new_unique();
+        let sigverify_data = DuplicateBlockProofSigverifyData {
+            shred_1_merkle_root: Hash::new_unique(),
+            shred_1_signature: Signature::new_unique().into(),
+            shred_2_merkle_root: Hash::new_unique(),
+            shred_2_signature: Signature::new_unique().into(),
+        };
+        let slot = 100;
+        let (instructions, mut instructions_sysvar_data) =
+            construct_instructions_and_sysvar(node_pubkey, slot, &sigverify_data);
+        let mut lamports = 0;
+        let instructions_sysvar = AccountInfo::new(
+            &instructions::ID,
+            false,
+            true,
+            &mut lamports,
+            &mut instructions_sysvar_data,
+            &instructions::ID,
+            false,
+            0,
+        );
+        let context =
+            DuplicateBlockProofContext::unpack_context(&instructions[1].data, &instructions_sysvar)
+                .unwrap();
+
+        assert_eq!(*context.expected_pubkey, node_pubkey);
+        assert_eq!(
+            *context.expected_shred1_merkle_root,
+            sigverify_data.shred_1_merkle_root
+        );
+        assert_eq!(
+            *context.expected_shred2_merkle_root,
+            sigverify_data.shred_2_merkle_root
+        );
+        assert_eq!(
+            *context.expected_shred1_signature,
+            sigverify_data.shred_1_signature
+        );
+        assert_eq!(
+            *context.expected_shred2_signature,
+            sigverify_data.shred_2_signature
+        );
     }
 
     #[test]
     fn test_legacy_shreds_invalid() {
         let mut rng = rand::thread_rng();
         let leader = Arc::new(Keypair::new());
+        let leader_pubkey = leader.pubkey();
         let shredder = Shredder::new(SLOT, PARENT_SLOT, REFERENCE_TICK, VERSION).unwrap();
         let next_shred_index = rng.gen_range(0..32_000);
         let legacy_data_shred =
@@ -300,9 +505,11 @@ mod tests {
             (data_shred.clone(), legacy_coding_shred.clone()),
         ];
         for (shred1, shred2) in test_cases.iter().flat_map(|(a, b)| [(a, b), (b, a)]) {
-            let proof_data = generate_proof_data(shred1, shred2);
+            let (proof_data, context) = generate_proof_data(&leader_pubkey, shred1, shred2);
             assert_eq!(
-                proof_data.verify_proof(SLOT, &leader.pubkey()).unwrap_err(),
+                proof_data
+                    .verify_proof(context, SLOT, &leader_pubkey)
+                    .unwrap_err(),
                 SlashingError::LegacyShreds,
             );
         }
@@ -312,6 +519,7 @@ mod tests {
     fn test_slot_invalid() {
         let mut rng = rand::thread_rng();
         let leader = Arc::new(Keypair::new());
+        let leader_pubkey = leader.pubkey();
         let shredder_slot = Shredder::new(SLOT, PARENT_SLOT, REFERENCE_TICK, VERSION).unwrap();
         let shredder_bad_slot =
             Shredder::new(SLOT + 1, PARENT_SLOT, REFERENCE_TICK, VERSION).unwrap();
@@ -357,9 +565,11 @@ mod tests {
         ];
 
         for (shred1, shred2) in test_cases.iter().flat_map(|(a, b)| [(a, b), (b, a)]) {
-            let proof_data = generate_proof_data(shred1, shred2);
+            let (proof_data, context) = generate_proof_data(&leader_pubkey, shred1, shred2);
             assert_eq!(
-                proof_data.verify_proof(SLOT, &leader.pubkey()).unwrap_err(),
+                proof_data
+                    .verify_proof(context, SLOT, &leader_pubkey)
+                    .unwrap_err(),
                 SlashingError::SlotMismatch
             );
         }
@@ -369,20 +579,24 @@ mod tests {
     fn test_payload_proof_valid() {
         let mut rng = rand::thread_rng();
         let leader = Arc::new(Keypair::new());
+        let leader_pubkey = leader.pubkey();
         let shredder = Shredder::new(SLOT, PARENT_SLOT, REFERENCE_TICK, VERSION).unwrap();
         let next_shred_index = rng.gen_range(0..32_000);
         let shred1 =
             new_rand_data_shred(&mut rng, next_shred_index, &shredder, &leader, true, true);
         let shred2 =
             new_rand_data_shred(&mut rng, next_shred_index, &shredder, &leader, true, true);
-        let proof_data = generate_proof_data(&shred1, &shred2);
-        proof_data.verify_proof(SLOT, &leader.pubkey()).unwrap();
+        let (proof_data, context) = generate_proof_data(&leader_pubkey, &shred1, &shred2);
+        proof_data
+            .verify_proof(context, SLOT, &leader_pubkey)
+            .unwrap();
     }
 
     #[test]
     fn test_payload_proof_invalid() {
         let mut rng = rand::thread_rng();
         let leader = Arc::new(Keypair::new());
+        let leader_pubkey = leader.pubkey();
         let shredder = Shredder::new(SLOT, PARENT_SLOT, REFERENCE_TICK, VERSION).unwrap();
         let next_shred_index = rng.gen_range(0..32_000);
         let data_shred =
@@ -397,9 +611,11 @@ mod tests {
         ];
 
         for (shred1, shred2) in test_cases.into_iter() {
-            let proof_data = generate_proof_data(&shred1, &shred2);
+            let (proof_data, context) = generate_proof_data(&leader_pubkey, &shred1, &shred2);
             assert_eq!(
-                proof_data.verify_proof(SLOT, &leader.pubkey()).unwrap_err(),
+                proof_data
+                    .verify_proof(context, SLOT, &leader_pubkey)
+                    .unwrap_err(),
                 SlashingError::InvalidPayloadProof
             );
         }
@@ -409,6 +625,7 @@ mod tests {
     fn test_merkle_root_proof_valid() {
         let mut rng = rand::thread_rng();
         let leader = Arc::new(Keypair::new());
+        let leader_pubkey = leader.pubkey();
         let shredder = Shredder::new(SLOT, PARENT_SLOT, REFERENCE_TICK, VERSION).unwrap();
         let next_shred_index = rng.gen_range(0..32_000);
         let (data_shreds, coding_shreds) = new_rand_shreds(
@@ -441,8 +658,10 @@ mod tests {
         ];
 
         for (shred1, shred2) in test_cases.iter().flat_map(|(a, b)| [(a, b), (b, a)]) {
-            let proof_data = generate_proof_data(shred1, shred2);
-            proof_data.verify_proof(SLOT, &leader.pubkey()).unwrap();
+            let (proof_data, context) = generate_proof_data(&leader_pubkey, shred1, shred2);
+            proof_data
+                .verify_proof(context, SLOT, &leader_pubkey)
+                .unwrap();
         }
     }
 
@@ -450,6 +669,7 @@ mod tests {
     fn test_merkle_root_proof_invalid() {
         let mut rng = rand::thread_rng();
         let leader = Arc::new(Keypair::new());
+        let leader_pubkey = leader.pubkey();
         let shredder = Shredder::new(SLOT, PARENT_SLOT, REFERENCE_TICK, VERSION).unwrap();
         let next_shred_index = rng.gen_range(0..32_000);
         let (data_shreds, coding_shreds) = new_rand_shreds(
@@ -483,9 +703,11 @@ mod tests {
         ];
 
         for (shred1, shred2) in test_cases.iter().flat_map(|(a, b)| [(a, b), (b, a)]) {
-            let proof_data = generate_proof_data(shred1, shred2);
+            let (proof_data, context) = generate_proof_data(&leader_pubkey, shred1, shred2);
             assert_eq!(
-                proof_data.verify_proof(SLOT, &leader.pubkey()).unwrap_err(),
+                proof_data
+                    .verify_proof(context, SLOT, &leader_pubkey)
+                    .unwrap_err(),
                 SlashingError::ShredTypeMismatch
             );
         }
@@ -495,6 +717,7 @@ mod tests {
     fn test_last_index_conflict_valid() {
         let mut rng = rand::thread_rng();
         let leader = Arc::new(Keypair::new());
+        let leader_pubkey = leader.pubkey();
         let shredder = Shredder::new(SLOT, PARENT_SLOT, REFERENCE_TICK, VERSION).unwrap();
         let next_shred_index = rng.gen_range(0..32_000);
         let test_cases = vec![
@@ -525,8 +748,10 @@ mod tests {
         ];
 
         for (shred1, shred2) in test_cases.iter().flat_map(|(a, b)| [(a, b), (b, a)]) {
-            let proof_data = generate_proof_data(shred1, shred2);
-            proof_data.verify_proof(SLOT, &leader.pubkey()).unwrap();
+            let (proof_data, context) = generate_proof_data(&leader_pubkey, shred1, shred2);
+            proof_data
+                .verify_proof(context, SLOT, &leader_pubkey)
+                .unwrap();
         }
     }
 
@@ -534,6 +759,7 @@ mod tests {
     fn test_last_index_conflict_invalid() {
         let mut rng = rand::thread_rng();
         let leader = Arc::new(Keypair::new());
+        let leader_pubkey = leader.pubkey();
         let shredder = Shredder::new(SLOT, PARENT_SLOT, REFERENCE_TICK, VERSION).unwrap();
         let next_shred_index = rng.gen_range(0..32_000);
         let test_cases = vec![
@@ -584,9 +810,11 @@ mod tests {
         ];
 
         for (shred1, shred2) in test_cases.iter().flat_map(|(a, b)| [(a, b), (b, a)]) {
-            let proof_data = generate_proof_data(shred1, shred2);
+            let (proof_data, context) = generate_proof_data(&leader_pubkey, shred1, shred2);
             assert_eq!(
-                proof_data.verify_proof(SLOT, &leader.pubkey()).unwrap_err(),
+                proof_data
+                    .verify_proof(context, SLOT, &leader_pubkey)
+                    .unwrap_err(),
                 SlashingError::InvalidLastIndexConflict
             );
         }
@@ -596,6 +824,7 @@ mod tests {
     fn test_erasure_meta_conflict_valid() {
         let mut rng = rand::thread_rng();
         let leader = Arc::new(Keypair::new());
+        let leader_pubkey = leader.pubkey();
         let shredder = Shredder::new(SLOT, PARENT_SLOT, REFERENCE_TICK, VERSION).unwrap();
         let next_shred_index = rng.gen_range(0..32_000);
         let coding_shreds =
@@ -611,8 +840,10 @@ mod tests {
             (coding_shreds[0].clone(), coding_shreds_smaller[1].clone()),
         ];
         for (shred1, shred2) in test_cases.iter().flat_map(|(a, b)| [(a, b), (b, a)]) {
-            let proof_data = generate_proof_data(shred1, shred2);
-            proof_data.verify_proof(SLOT, &leader.pubkey()).unwrap();
+            let (proof_data, context) = generate_proof_data(&leader_pubkey, shred1, shred2);
+            proof_data
+                .verify_proof(context, SLOT, &leader_pubkey)
+                .unwrap();
         }
     }
 
@@ -620,6 +851,7 @@ mod tests {
     fn test_erasure_meta_conflict_invalid() {
         let mut rng = rand::thread_rng();
         let leader = Arc::new(Keypair::new());
+        let leader_pubkey = leader.pubkey();
         let shredder = Shredder::new(SLOT, PARENT_SLOT, REFERENCE_TICK, VERSION).unwrap();
         let next_shred_index = rng.gen_range(0..32_000);
         let coding_shreds =
@@ -665,9 +897,11 @@ mod tests {
         ];
 
         for (shred1, shred2) in test_cases.iter().flat_map(|(a, b)| [(a, b), (b, a)]) {
-            let proof_data = generate_proof_data(shred1, shred2);
+            let (proof_data, context) = generate_proof_data(&leader_pubkey, shred1, shred2);
             assert_eq!(
-                proof_data.verify_proof(SLOT, &leader.pubkey()).unwrap_err(),
+                proof_data
+                    .verify_proof(context, SLOT, &leader_pubkey)
+                    .unwrap_err(),
                 SlashingError::InvalidErasureMetaConflict
             );
         }
@@ -677,6 +911,7 @@ mod tests {
     fn test_shred_version_invalid() {
         let mut rng = rand::thread_rng();
         let leader = Arc::new(Keypair::new());
+        let leader_pubkey = leader.pubkey();
         let shredder = Shredder::new(SLOT, PARENT_SLOT, REFERENCE_TICK, VERSION).unwrap();
         let next_shred_index = rng.gen_range(0..32_000);
         let (data_shreds, coding_shreds) = new_rand_shreds(
@@ -711,9 +946,11 @@ mod tests {
         ];
 
         for (shred1, shred2) in test_cases.iter().flat_map(|(a, b)| [(a, b), (b, a)]) {
-            let proof_data = generate_proof_data(shred1, shred2);
+            let (proof_data, context) = generate_proof_data(&leader_pubkey, shred1, shred2);
             assert_eq!(
-                proof_data.verify_proof(SLOT, &leader.pubkey()).unwrap_err(),
+                proof_data
+                    .verify_proof(context, SLOT, &leader_pubkey)
+                    .unwrap_err(),
                 SlashingError::InvalidShredVersion
             );
         }
@@ -728,6 +965,7 @@ mod tests {
 
         let mut rng = rand::thread_rng();
         let leader = Arc::new(Keypair::new());
+        let leader_pubkey = leader.pubkey();
         let shredder = Shredder::new(SLOT, PARENT_SLOT, REFERENCE_TICK, VERSION).unwrap();
         let next_shred_index = rng.gen_range(0..32_000);
         let data_shred =
@@ -761,9 +999,11 @@ mod tests {
             (coding_shred, coding_shred_different_retransmitter),
         ];
         for (shred1, shred2) in test_cases.iter().flat_map(|(a, b)| [(a, b), (b, a)]) {
-            let proof_data = generate_proof_data(shred1, shred2);
+            let (proof_data, context) = generate_proof_data(&leader_pubkey, shred1, shred2);
             assert_eq!(
-                proof_data.verify_proof(SLOT, &leader.pubkey()).unwrap_err(),
+                proof_data
+                    .verify_proof(context, SLOT, &leader_pubkey)
+                    .unwrap_err(),
                 SlashingError::InvalidPayloadProof
             );
         }
@@ -773,6 +1013,7 @@ mod tests {
     fn test_overlapping_erasure_meta_proof_valid() {
         let mut rng = rand::thread_rng();
         let leader = Arc::new(Keypair::new());
+        let leader_pubkey = leader.pubkey();
         let shredder = Shredder::new(SLOT, PARENT_SLOT, REFERENCE_TICK, VERSION).unwrap();
         let next_shred_index = rng.gen_range(0..32_000);
         let coding_shreds =
@@ -802,8 +1043,10 @@ mod tests {
             ),
         ];
         for (shred1, shred2) in test_cases.iter().flat_map(|(a, b)| [(a, b), (b, a)]) {
-            let proof_data = generate_proof_data(shred1, shred2);
-            proof_data.verify_proof(SLOT, &leader.pubkey()).unwrap();
+            let (proof_data, context) = generate_proof_data(&leader_pubkey, shred1, shred2);
+            proof_data
+                .verify_proof(context, SLOT, &leader_pubkey)
+                .unwrap();
         }
     }
 
@@ -811,6 +1054,7 @@ mod tests {
     fn test_overlapping_erasure_meta_proof_invalid() {
         let mut rng = rand::thread_rng();
         let leader = Arc::new(Keypair::new());
+        let leader_pubkey = leader.pubkey();
         let shredder = Shredder::new(SLOT, PARENT_SLOT, REFERENCE_TICK, VERSION).unwrap();
         let next_shred_index = rng.gen_range(0..32_000);
         let (data_shred, coding_shred) = new_rand_shreds(
@@ -862,11 +1106,78 @@ mod tests {
             .iter()
             .flat_map(|(a, b, c)| [(a, b, c), (b, a, c)])
         {
-            let proof_data = generate_proof_data(shred1, shred2);
+            let (proof_data, context) = generate_proof_data(&leader_pubkey, shred1, shred2);
             assert_eq!(
-                proof_data.verify_proof(SLOT, &leader.pubkey()).unwrap_err(),
+                proof_data
+                    .verify_proof(context, SLOT, &leader_pubkey)
+                    .unwrap_err(),
                 *expected,
             );
         }
+    }
+
+    #[test]
+    fn test_sigverify() {
+        let mut rng = rand::thread_rng();
+        let leader = Arc::new(Keypair::new());
+        let leader_pubkey = leader.pubkey();
+        let shredder = Shredder::new(SLOT, PARENT_SLOT, REFERENCE_TICK, VERSION).unwrap();
+        let next_shred_index = rng.gen_range(0..32_000);
+        let shred1 =
+            new_rand_data_shred(&mut rng, next_shred_index, &shredder, &leader, true, true);
+        let shred2 =
+            new_rand_data_shred(&mut rng, next_shred_index, &shredder, &leader, true, true);
+
+        let (proof_data, context) = generate_proof_data(&leader_pubkey, &shred1, &shred2);
+        assert!(proof_data
+            .verify_proof(context, SLOT, &leader_pubkey)
+            .is_ok());
+
+        let bad_pubkey = Pubkey::new_unique();
+        let bad_merkle_root = Hash::new_unique();
+        let bad_signature = <[u8; SIGNATURE_BYTES]>::from(Signature::new_unique());
+
+        let mut bad_context = context;
+        bad_context.expected_pubkey = &bad_pubkey;
+        assert_eq!(
+            proof_data
+                .verify_proof(bad_context, SLOT, &leader_pubkey)
+                .unwrap_err(),
+            SlashingError::SignatureVerificationMismatch
+        );
+
+        let mut bad_context = context;
+        bad_context.expected_shred1_merkle_root = &bad_merkle_root;
+        assert_eq!(
+            proof_data
+                .verify_proof(bad_context, SLOT, &leader_pubkey)
+                .unwrap_err(),
+            SlashingError::SignatureVerificationMismatch
+        );
+        let mut bad_context = context;
+        bad_context.expected_shred2_merkle_root = &bad_merkle_root;
+        assert_eq!(
+            proof_data
+                .verify_proof(bad_context, SLOT, &leader_pubkey)
+                .unwrap_err(),
+            SlashingError::SignatureVerificationMismatch
+        );
+
+        let mut bad_context = context;
+        bad_context.expected_shred1_signature = &bad_signature;
+        assert_eq!(
+            proof_data
+                .verify_proof(bad_context, SLOT, &leader_pubkey)
+                .unwrap_err(),
+            SlashingError::SignatureVerificationMismatch
+        );
+        let mut bad_context = context;
+        bad_context.expected_shred2_signature = &bad_signature;
+        assert_eq!(
+            proof_data
+                .verify_proof(bad_context, SLOT, &leader_pubkey)
+                .unwrap_err(),
+            SlashingError::SignatureVerificationMismatch
+        );
     }
 }

@@ -41,13 +41,21 @@ pub enum SlashingError {
     #[error("Invalid shred version")]
     InvalidShredVersion,
 
-    /// Invalid signature on duplicate block proof shreds
-    #[error("Invalid signature")]
-    InvalidSignature,
+    /// Invalid signature verification instruction
+    #[error("Signature verification instruction is invalid")]
+    InvalidSignatureVerification,
 
     /// Legacy shreds are not supported
     #[error("Legacy shreds are not eligible for slashing")]
     LegacyShreds,
+
+    /// Missing instructions sysvar
+    #[error("Instructions sysvar is missing")]
+    MissingInstructionsSysvar,
+
+    /// Missing signature verification instruction
+    #[error("Signature verification instruction is missing")]
+    MissingSignatureVerification,
 
     /// Unable to deserialize proof buffer
     #[error("Proof buffer deserialization error")]
@@ -64,6 +72,10 @@ pub enum SlashingError {
     /// Invalid shred type on duplicate block proof shreds
     #[error("Shred type mismatch")]
     ShredTypeMismatch,
+
+    /// Signature verification instruction did not match the shred
+    #[error("Mismatch between signature verification and shred")]
+    SignatureVerificationMismatch,
 
     /// Invalid slot on duplicate block proof shreds
     #[error("Slot mismatch")]

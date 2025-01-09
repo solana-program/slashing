@@ -1,15 +1,18 @@
 //! Program instructions
 
 use {
-    crate::{error::SlashingError, id},
+    crate::{error::SlashingError, id, sigverify::Ed25519SignatureOffsets},
     bytemuck::{Pod, Zeroable},
     num_enum::{IntoPrimitive, TryFromPrimitive},
     solana_program::{
         clock::Slot,
+        hash::{Hash, HASH_BYTES},
         instruction::{AccountMeta, Instruction},
         program_error::ProgramError,
         pubkey::Pubkey,
+        sysvar,
     },
+    solana_signature::SIGNATURE_BYTES,
     spl_pod::{
         bytemuck::{pod_from_bytes, pod_get_packed_len},
         primitives::PodU64,
@@ -27,6 +30,7 @@ pub enum SlashingInstruction {
     /// Accounts expected by this instruction:
     /// 0. `[]` Proof account, must be previously initialized with the proof
     ///    data.
+    /// 1. `[]` Instructions sysvar
     ///
     /// We expect the proof account to be properly sized as to hold a duplicate
     /// block proof. See [`ProofType`] for sizing requirements.
@@ -50,6 +54,38 @@ pub struct DuplicateBlockProofInstructionData {
     pub(crate) slot: PodU64,
     /// Identity pubkey of the Node that signed the duplicate block
     pub(crate) node_pubkey: Pubkey,
+}
+
+impl DuplicateBlockProofInstructionData {
+    // 1 Byte for the instruction type discriminant
+    const DATA_START: u16 = 1;
+    const NODE_PUBKEY_OFFSET: u16 = 16 + Self::DATA_START;
+}
+
+/// Utility struct for packaging the signature verification data required
+/// for `SlashingInstruction::DuplicateBlockProof`
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Pod, Zeroable)]
+pub struct DuplicateBlockProofSigverifyData {
+    /// The first shred's merkle root (the message of the first sigverify
+    /// instruction)
+    pub shred_1_merkle_root: Hash,
+    /// The first shred's signature (the signature of the first sigverify
+    /// instruction)
+    pub shred_1_signature: [u8; SIGNATURE_BYTES],
+    /// The second shred's merkle root (the message of the second sigverify
+    /// instruction)
+    pub shred_2_merkle_root: Hash,
+    /// The second shred's signature (the signature of the second sigverify
+    /// instruction)
+    pub shred_2_signature: [u8; SIGNATURE_BYTES],
+}
+
+impl DuplicateBlockProofSigverifyData {
+    const MESSAGE_1_OFFSET: u16 = 0;
+    const SIGNATURE_1_OFFSET: u16 = HASH_BYTES as u16 + Self::MESSAGE_1_OFFSET;
+    const MESSAGE_2_OFFSET: u16 = SIGNATURE_BYTES as u16 + Self::SIGNATURE_1_OFFSET;
+    const SIGNATURE_2_OFFSET: u16 = HASH_BYTES as u16 + Self::MESSAGE_2_OFFSET;
 }
 
 /// Utility function for encoding instruction data
@@ -79,10 +115,11 @@ pub(crate) fn decode_instruction_type(input: &[u8]) -> Result<SlashingInstructio
 
 /// Utility function for decoding instruction data
 pub(crate) fn decode_instruction_data<T: Pod>(input_with_type: &[u8]) -> Result<&T, ProgramError> {
-    if input_with_type.len() != pod_get_packed_len::<T>().saturating_add(1) {
+    let data_len = pod_get_packed_len::<T>().saturating_add(1);
+    if input_with_type.len() < data_len {
         Err(ProgramError::InvalidInstructionData)
     } else {
-        pod_from_bytes(&input_with_type[1..])
+        pod_from_bytes(&input_with_type[1..data_len])
     }
 }
 
@@ -93,8 +130,10 @@ pub fn duplicate_block_proof(
     slot: Slot,
     node_pubkey: Pubkey,
 ) -> Instruction {
+    let mut accounts = vec![AccountMeta::new_readonly(*proof_account, false)];
+    accounts.push(AccountMeta::new_readonly(sysvar::instructions::id(), false));
     encode_instruction(
-        vec![AccountMeta::new_readonly(*proof_account, false)],
+        accounts,
         SlashingInstruction::DuplicateBlockProof,
         &DuplicateBlockProofInstructionData {
             offset: PodU64::from(offset),
@@ -102,6 +141,108 @@ pub fn duplicate_block_proof(
             node_pubkey,
         },
     )
+}
+
+/// Utility to create instructions for both the signature verification and the
+/// `SlashingInstruction::DuplicateBlockProof` in the expected format.
+///
+/// `sigverify_data` should equal the `(shredx.merkle_root, shredx.signature)`
+/// specified in the proof account
+///
+/// `slashing_instruction_index` should be set to the instruction index of the
+/// slashing instruction in the final transaction. By default this will be `1`,
+/// if you are only sending the results of this function in the transaction.
+///
+/// Returns two instructions, the sigverify and the slashing instruction. These
+/// must be sent consecutively in a transaction with the same ordering to
+/// function properly.
+pub fn duplicate_block_proof_with_sigverify(
+    proof_account: &Pubkey,
+    offset: u64,
+    slot: Slot,
+    node_pubkey: Pubkey,
+    sigverify_data: &DuplicateBlockProofSigverifyData,
+    slashing_instruction_index: u16,
+) -> [Instruction; 2] {
+    let mut slashing_ix = duplicate_block_proof(proof_account, offset, slot, node_pubkey);
+    let offset = slashing_ix.data.len() as u16;
+    slashing_ix
+        .data
+        .extend_from_slice(bytemuck::bytes_of(sigverify_data));
+
+    let signature_instruction_index = slashing_instruction_index;
+    let public_key_offset = DuplicateBlockProofInstructionData::NODE_PUBKEY_OFFSET;
+    let public_key_instruction_index = slashing_instruction_index;
+    let message_data_size = HASH_BYTES as u16;
+    let message_instruction_index = slashing_instruction_index;
+
+    let shred1_sigverify_offset = Ed25519SignatureOffsets {
+        signature_offset: offset
+            .saturating_add(DuplicateBlockProofSigverifyData::SIGNATURE_1_OFFSET),
+        signature_instruction_index,
+        public_key_offset,
+        public_key_instruction_index,
+        message_data_offset: offset
+            .saturating_add(DuplicateBlockProofSigverifyData::MESSAGE_1_OFFSET),
+        message_data_size,
+        message_instruction_index,
+    };
+    let shred2_sigverify_offset = Ed25519SignatureOffsets {
+        signature_offset: offset
+            .saturating_add(DuplicateBlockProofSigverifyData::SIGNATURE_2_OFFSET),
+        signature_instruction_index,
+        public_key_offset,
+        public_key_instruction_index,
+        message_data_offset: offset
+            .saturating_add(DuplicateBlockProofSigverifyData::MESSAGE_2_OFFSET),
+        message_data_size,
+        message_instruction_index,
+    };
+    let sigverify_ix = Ed25519SignatureOffsets::to_instruction(&[
+        shred1_sigverify_offset,
+        shred2_sigverify_offset,
+    ]);
+
+    [sigverify_ix, slashing_ix]
+}
+
+#[cfg(test)]
+pub(crate) fn construct_instructions_and_sysvar(
+    node_pubkey: Pubkey,
+    slot: Slot,
+    sigverify_data: &DuplicateBlockProofSigverifyData,
+) -> ([Instruction; 2], Vec<u8>) {
+    use solana_sdk::sysvar::instructions::{self, BorrowedAccountMeta, BorrowedInstruction};
+
+    fn borrow_account(account: &AccountMeta) -> BorrowedAccountMeta {
+        BorrowedAccountMeta {
+            pubkey: &account.pubkey,
+            is_signer: account.is_signer,
+            is_writable: account.is_writable,
+        }
+    }
+    fn borrow_instruction(ix: &Instruction) -> BorrowedInstruction {
+        BorrowedInstruction {
+            program_id: &ix.program_id,
+            accounts: ix.accounts.iter().map(borrow_account).collect(),
+            data: &ix.data,
+        }
+    }
+
+    let instructions = duplicate_block_proof_with_sigverify(
+        &Pubkey::new_unique(),
+        0,
+        slot,
+        node_pubkey,
+        sigverify_data,
+        1,
+    );
+    let borrowed_instructions: Vec<BorrowedInstruction> =
+        instructions.iter().map(borrow_instruction).collect();
+    let mut instructions_sysvar_data =
+        instructions::construct_instructions_data(&borrowed_instructions);
+    instructions::store_current_index(&mut instructions_sysvar_data, 1);
+    (instructions, instructions_sysvar_data)
 }
 
 #[cfg(test)]
