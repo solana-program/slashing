@@ -29,13 +29,13 @@ pub enum SlashingInstruction {
     ///    data.
     ///
     /// We expect the proof account to be properly sized as to hold a duplicate
-    /// block proof. See [ProofType] for sizing requirements.
+    /// block proof. See [`ProofType`] for sizing requirements.
     ///
     /// Deserializing the proof account from `offset` should result in a
-    /// [DuplicateBlockProofData]
+    /// [`DuplicateBlockProofData`]
     ///
     /// Data expected by this instruction:
-    ///   DuplicateBlockProofInstructionData
+    ///   `DuplicateBlockProofInstructionData`
     DuplicateBlockProof,
 }
 
@@ -46,7 +46,7 @@ pub enum SlashingInstruction {
 pub struct DuplicateBlockProofInstructionData {
     /// Offset into the proof account to begin reading, expressed as `u64`
     pub(crate) offset: PodU64,
-    /// Slot for which the violation occured
+    /// Slot for which the violation occurred
     pub(crate) slot: PodU64,
     /// Identity pubkey of the Node that signed the duplicate block
     pub(crate) node_pubkey: Pubkey,
