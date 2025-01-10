@@ -1,7 +1,8 @@
 //! Program state
 use {
     crate::{duplicate_block_proof::DuplicateBlockProofData, error::SlashingError},
-    solana_program::{clock::Slot, pubkey::Pubkey},
+    solana_program::{account_info::AccountInfo, clock::Slot, pubkey::Pubkey},
+    std::slice::Iter,
 };
 
 const PACKET_DATA_SIZE: usize = 1232;
@@ -61,14 +62,25 @@ impl From<u8> for ProofType {
 pub trait SlashingProofData<'a> {
     /// The type of proof this data represents
     const PROOF_TYPE: ProofType;
+    /// The context needed to verify the proof
+    type Context;
 
-    /// Zero copy from raw data buffer
-    fn unpack(data: &'a [u8]) -> Result<Self, SlashingError>
+    /// Zero copy from raw data buffers and initialize any context
+    fn unpack<'b>(
+        proof_account_data: &'a [u8],
+        instruction_data: &'a [u8],
+        account_info_iter: &'a mut Iter<'_, AccountInfo<'b>>,
+    ) -> Result<(Self, Self::Context), SlashingError>
     where
         Self: Sized;
 
     /// Verification logic for this type of proof data
-    fn verify_proof(self, slot: Slot, pubkey: &Pubkey) -> Result<(), SlashingError>;
+    fn verify_proof(
+        self,
+        context: Self::Context,
+        slot: Slot,
+        pubkey: &Pubkey,
+    ) -> Result<(), SlashingError>;
 }
 
 #[cfg(test)]

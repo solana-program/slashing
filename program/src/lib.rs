@@ -7,6 +7,7 @@ pub mod error;
 pub mod instruction;
 pub mod processor;
 mod shred;
+mod sigverify;
 pub mod state;
 
 // Export current SDK types for downstream users building with a different SDK

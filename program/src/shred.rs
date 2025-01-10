@@ -3,17 +3,17 @@ use {
     crate::error::SlashingError,
     bitflags::bitflags,
     bytemuck::Pod,
-    generic_array::{typenum::U64, GenericArray},
     num_enum::{IntoPrimitive, TryFromPrimitive},
     serde_derive::Deserialize,
     solana_program::{
         clock::Slot,
-        hash::{hashv, Hash},
+        hash::{hashv, Hash, HASH_BYTES},
     },
+    solana_signature::SIGNATURE_BYTES,
     spl_pod::primitives::{PodU16, PodU32, PodU64},
 };
 
-pub(crate) const SIZE_OF_SIGNATURE: usize = 64;
+pub(crate) const SIZE_OF_SIGNATURE: usize = SIGNATURE_BYTES;
 const SIZE_OF_SHRED_VARIANT: usize = 1;
 const SIZE_OF_SLOT: usize = 8;
 const SIZE_OF_INDEX: usize = 4;
@@ -24,7 +24,7 @@ const SIZE_OF_NUM_DATA_SHREDS: usize = 2;
 const SIZE_OF_NUM_CODING_SHREDS: usize = 2;
 const SIZE_OF_POSITION: usize = 2;
 
-const SIZE_OF_MERKLE_ROOT: usize = 32;
+const SIZE_OF_MERKLE_ROOT: usize = HASH_BYTES;
 const SIZE_OF_MERKLE_PROOF_ENTRY: usize = 20;
 
 const OFFSET_OF_SHRED_VARIANT: usize = SIZE_OF_SIGNATURE;
@@ -45,10 +45,6 @@ const OFFSET_OF_CODING_POSITION: usize =
 type MerkleProofEntry = [u8; 20];
 const MERKLE_HASH_PREFIX_LEAF: &[u8] = b"\x00SOLANA_MERKLE_SHREDS_LEAF";
 const MERKLE_HASH_PREFIX_NODE: &[u8] = b"\x01SOLANA_MERKLE_SHREDS_NODE";
-
-#[repr(transparent)]
-#[derive(Clone, Copy, Default, Eq, PartialEq, Ord, PartialOrd, Hash, Deserialize)]
-pub(crate) struct Signature(GenericArray<u8, U64>);
 
 bitflags! {
     #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Deserialize)]
@@ -145,6 +141,14 @@ impl<'a> Shred<'a> {
                 .ok_or(SlashingError::ShredDeserializationError)?,
         )
         .map_err(|_| SlashingError::ShredDeserializationError)
+    }
+
+    pub(crate) fn signature(&self) -> Result<&[u8; SIGNATURE_BYTES], SlashingError> {
+        self.payload
+            .get(0..SIZE_OF_SIGNATURE)
+            .ok_or(SlashingError::ShredDeserializationError)?
+            .try_into()
+            .map_err(|_| SlashingError::ShredDeserializationError)
     }
 
     fn get_shred_variant(payload: &'a [u8]) -> Result<ShredVariant, SlashingError> {
@@ -414,6 +418,7 @@ pub(crate) mod tests {
             ProcessShredsStats, ReedSolomonCache, Shred as SolanaShred, Shredder,
         },
         solana_sdk::{hash::Hash, pubkey::Pubkey, signature::Keypair, system_transaction},
+        solana_signature::Signature,
         std::sync::Arc,
     };
 
@@ -532,6 +537,10 @@ pub(crate) mod tests {
                 let shred = Shred::new_from_payload(payload).unwrap();
 
                 assert_eq!(shred.slot().unwrap(), solana_shred.slot());
+                assert_eq!(
+                    Signature::from(*shred.signature().unwrap()),
+                    *solana_shred.signature()
+                );
                 assert_eq!(shred.index().unwrap(), solana_shred.index());
                 assert_eq!(shred.version().unwrap(), solana_shred.version());
                 assert_eq!(
