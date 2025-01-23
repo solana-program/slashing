@@ -31,7 +31,7 @@ use {
         processor::process_instruction,
         state::ProofType,
     },
-    std::sync::Arc,
+    std::{assert_ne, sync::Arc},
 };
 
 const SLOT: Slot = 53084024;
@@ -273,6 +273,12 @@ async fn valid_proof_coding() {
         new_rand_coding_shreds(&mut rng, next_shred_index, 10, &shredder, &leader)[0].clone();
     let shred2 =
         new_rand_coding_shreds(&mut rng, next_shred_index, 10, &shredder, &leader)[1].clone();
+
+    assert_ne!(
+        shred1.merkle_root().unwrap(),
+        shred2.merkle_root().unwrap(),
+        "Expected merkle root failure"
+    );
 
     let duplicate_proof = DuplicateBlockProofData {
         shred1: shred1.payload().as_slice(),
