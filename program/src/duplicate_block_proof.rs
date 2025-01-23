@@ -384,7 +384,7 @@ mod tests {
     use {
         super::*,
         crate::{
-            instruction::{construct_instructions_and_sysvar, DuplicateBlockProofSigverifyData},
+            instruction::{construct_instructions_and_sysvar, DuplicateBlockProofInstructionData},
             shred::{
                 tests::{new_rand_coding_shreds, new_rand_data_shred, new_rand_shreds},
                 SIZE_OF_SIGNATURE,
@@ -396,6 +396,7 @@ mod tests {
             signature::{Keypair, Signature, Signer},
             sysvar::instructions,
         },
+        spl_pod::primitives::PodU64,
         std::sync::Arc,
     };
 
@@ -433,15 +434,18 @@ mod tests {
     #[test]
     fn test_unpack_context() {
         let node_pubkey = Pubkey::new_unique();
-        let sigverify_data = DuplicateBlockProofSigverifyData {
+        let slot = 100;
+        let instruction_data = DuplicateBlockProofInstructionData {
+            slot: PodU64::from(slot),
+            offset: PodU64::from(0),
+            node_pubkey,
             shred_1_merkle_root: Hash::new_unique(),
             shred_1_signature: Signature::new_unique().into(),
             shred_2_merkle_root: Hash::new_unique(),
             shred_2_signature: Signature::new_unique().into(),
         };
-        let slot = 100;
         let (instructions, mut instructions_sysvar_data) =
-            construct_instructions_and_sysvar(node_pubkey, slot, &sigverify_data);
+            construct_instructions_and_sysvar(&instruction_data);
         let mut lamports = 0;
         let instructions_sysvar = AccountInfo::new(
             &instructions::ID,
@@ -460,19 +464,19 @@ mod tests {
         assert_eq!(*context.expected_pubkey, node_pubkey);
         assert_eq!(
             *context.expected_shred1_merkle_root,
-            sigverify_data.shred_1_merkle_root
+            instruction_data.shred_1_merkle_root
         );
         assert_eq!(
             *context.expected_shred2_merkle_root,
-            sigverify_data.shred_2_merkle_root
+            instruction_data.shred_2_merkle_root
         );
         assert_eq!(
             *context.expected_shred1_signature,
-            sigverify_data.shred_1_signature
+            instruction_data.shred_1_signature
         );
         assert_eq!(
             *context.expected_shred2_signature,
-            sigverify_data.shred_2_signature
+            instruction_data.shred_2_signature
         );
     }
 

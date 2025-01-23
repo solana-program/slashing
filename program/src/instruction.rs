@@ -5,11 +5,10 @@ use {
     bytemuck::{Pod, Zeroable},
     num_enum::{IntoPrimitive, TryFromPrimitive},
     solana_program::{
-        clock::Slot,
         hash::{Hash, HASH_BYTES},
         instruction::{AccountMeta, Instruction},
         program_error::ProgramError,
-        pubkey::Pubkey,
+        pubkey::{Pubkey, PUBKEY_BYTES},
         sysvar,
     },
     solana_signature::SIGNATURE_BYTES,
@@ -49,24 +48,11 @@ pub enum SlashingInstruction {
 #[derive(Clone, Copy, Debug, PartialEq, Pod, Zeroable)]
 pub struct DuplicateBlockProofInstructionData {
     /// Offset into the proof account to begin reading, expressed as `u64`
-    pub(crate) offset: PodU64,
+    pub offset: PodU64,
     /// Slot for which the violation occurred
-    pub(crate) slot: PodU64,
+    pub slot: PodU64,
     /// Identity pubkey of the Node that signed the duplicate block
-    pub(crate) node_pubkey: Pubkey,
-}
-
-impl DuplicateBlockProofInstructionData {
-    // 1 Byte for the instruction type discriminant
-    const DATA_START: u16 = 1;
-    const NODE_PUBKEY_OFFSET: u16 = 16 + Self::DATA_START;
-}
-
-/// Utility struct for packaging the signature verification data required
-/// for `SlashingInstruction::DuplicateBlockProof`
-#[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, Pod, Zeroable)]
-pub struct DuplicateBlockProofSigverifyData {
+    pub node_pubkey: Pubkey,
     /// The first shred's merkle root (the message of the first sigverify
     /// instruction)
     pub shred_1_merkle_root: Hash,
@@ -81,8 +67,12 @@ pub struct DuplicateBlockProofSigverifyData {
     pub shred_2_signature: [u8; SIGNATURE_BYTES],
 }
 
-impl DuplicateBlockProofSigverifyData {
-    const MESSAGE_1_OFFSET: u16 = 0;
+impl DuplicateBlockProofInstructionData {
+    // 1 Byte for the instruction type discriminant
+    const DATA_START: u16 = 1;
+    const NODE_PUBKEY_OFFSET: u16 = 16 + Self::DATA_START;
+
+    const MESSAGE_1_OFFSET: u16 = Self::NODE_PUBKEY_OFFSET + PUBKEY_BYTES as u16;
     const SIGNATURE_1_OFFSET: u16 = HASH_BYTES as u16 + Self::MESSAGE_1_OFFSET;
     const MESSAGE_2_OFFSET: u16 = SIGNATURE_BYTES as u16 + Self::SIGNATURE_1_OFFSET;
     const SIGNATURE_2_OFFSET: u16 = HASH_BYTES as u16 + Self::MESSAGE_2_OFFSET;
@@ -116,7 +106,7 @@ pub(crate) fn decode_instruction_type(input: &[u8]) -> Result<SlashingInstructio
 /// Utility function for decoding instruction data
 pub(crate) fn decode_instruction_data<T: Pod>(input_with_type: &[u8]) -> Result<&T, ProgramError> {
     let data_len = pod_get_packed_len::<T>().saturating_add(1);
-    if input_with_type.len() < data_len {
+    if input_with_type.len() != data_len {
         Err(ProgramError::InvalidInstructionData)
     } else {
         pod_from_bytes(&input_with_type[1..data_len])
@@ -126,20 +116,14 @@ pub(crate) fn decode_instruction_data<T: Pod>(input_with_type: &[u8]) -> Result<
 /// Create a `SlashingInstruction::DuplicateBlockProof` instruction
 pub fn duplicate_block_proof(
     proof_account: &Pubkey,
-    offset: u64,
-    slot: Slot,
-    node_pubkey: Pubkey,
+    instruction_data: &DuplicateBlockProofInstructionData,
 ) -> Instruction {
     let mut accounts = vec![AccountMeta::new_readonly(*proof_account, false)];
     accounts.push(AccountMeta::new_readonly(sysvar::instructions::id(), false));
     encode_instruction(
         accounts,
         SlashingInstruction::DuplicateBlockProof,
-        &DuplicateBlockProofInstructionData {
-            offset: PodU64::from(offset),
-            slot: PodU64::from(slot),
-            node_pubkey,
-        },
+        instruction_data,
     )
 }
 
@@ -158,18 +142,10 @@ pub fn duplicate_block_proof(
 /// function properly.
 pub fn duplicate_block_proof_with_sigverify(
     proof_account: &Pubkey,
-    offset: u64,
-    slot: Slot,
-    node_pubkey: Pubkey,
-    sigverify_data: &DuplicateBlockProofSigverifyData,
+    instruction_data: &DuplicateBlockProofInstructionData,
     slashing_instruction_index: u16,
 ) -> [Instruction; 2] {
-    let mut slashing_ix = duplicate_block_proof(proof_account, offset, slot, node_pubkey);
-    let offset = slashing_ix.data.len() as u16;
-    slashing_ix
-        .data
-        .extend_from_slice(bytemuck::bytes_of(sigverify_data));
-
+    let slashing_ix = duplicate_block_proof(proof_account, instruction_data);
     let signature_instruction_index = slashing_instruction_index;
     let public_key_offset = DuplicateBlockProofInstructionData::NODE_PUBKEY_OFFSET;
     let public_key_instruction_index = slashing_instruction_index;
@@ -177,24 +153,20 @@ pub fn duplicate_block_proof_with_sigverify(
     let message_instruction_index = slashing_instruction_index;
 
     let shred1_sigverify_offset = Ed25519SignatureOffsets {
-        signature_offset: offset
-            .saturating_add(DuplicateBlockProofSigverifyData::SIGNATURE_1_OFFSET),
+        signature_offset: DuplicateBlockProofInstructionData::SIGNATURE_1_OFFSET,
         signature_instruction_index,
         public_key_offset,
         public_key_instruction_index,
-        message_data_offset: offset
-            .saturating_add(DuplicateBlockProofSigverifyData::MESSAGE_1_OFFSET),
+        message_data_offset: DuplicateBlockProofInstructionData::MESSAGE_1_OFFSET,
         message_data_size,
         message_instruction_index,
     };
     let shred2_sigverify_offset = Ed25519SignatureOffsets {
-        signature_offset: offset
-            .saturating_add(DuplicateBlockProofSigverifyData::SIGNATURE_2_OFFSET),
+        signature_offset: DuplicateBlockProofInstructionData::SIGNATURE_2_OFFSET,
         signature_instruction_index,
         public_key_offset,
         public_key_instruction_index,
-        message_data_offset: offset
-            .saturating_add(DuplicateBlockProofSigverifyData::MESSAGE_2_OFFSET),
+        message_data_offset: DuplicateBlockProofInstructionData::MESSAGE_2_OFFSET,
         message_data_size,
         message_instruction_index,
     };
@@ -208,9 +180,7 @@ pub fn duplicate_block_proof_with_sigverify(
 
 #[cfg(test)]
 pub(crate) fn construct_instructions_and_sysvar(
-    node_pubkey: Pubkey,
-    slot: Slot,
-    sigverify_data: &DuplicateBlockProofSigverifyData,
+    instruction_data: &DuplicateBlockProofInstructionData,
 ) -> ([Instruction; 2], Vec<u8>) {
     use solana_sdk::sysvar::instructions::{self, BorrowedAccountMeta, BorrowedInstruction};
 
@@ -229,14 +199,8 @@ pub(crate) fn construct_instructions_and_sysvar(
         }
     }
 
-    let instructions = duplicate_block_proof_with_sigverify(
-        &Pubkey::new_unique(),
-        0,
-        slot,
-        node_pubkey,
-        sigverify_data,
-        1,
-    );
+    let instructions =
+        duplicate_block_proof_with_sigverify(&Pubkey::new_unique(), instruction_data, 1);
     let borrowed_instructions: Vec<BorrowedInstruction> =
         instructions.iter().map(borrow_instruction).collect();
     let mut instructions_sysvar_data =
@@ -247,7 +211,7 @@ pub(crate) fn construct_instructions_and_sysvar(
 
 #[cfg(test)]
 mod tests {
-    use {super::*, solana_program::program_error::ProgramError};
+    use {super::*, solana_program::program_error::ProgramError, solana_signature::Signature};
 
     const TEST_BYTES: [u8; 8] = [42; 8];
 
@@ -256,11 +220,28 @@ mod tests {
         let offset = 34;
         let slot = 42;
         let node_pubkey = Pubkey::new_unique();
-        let instruction = duplicate_block_proof(&Pubkey::new_unique(), offset, slot, node_pubkey);
+        let shred_1_merkle_root = Hash::new_unique();
+        let shred_1_signature = Signature::new_unique().into();
+        let shred_2_merkle_root = Hash::new_unique();
+        let shred_2_signature = Signature::new_unique().into();
+        let instruction_data = DuplicateBlockProofInstructionData {
+            offset: PodU64::from(offset),
+            slot: PodU64::from(slot),
+            node_pubkey,
+            shred_1_merkle_root,
+            shred_1_signature,
+            shred_2_merkle_root,
+            shred_2_signature,
+        };
+        let instruction = duplicate_block_proof(&Pubkey::new_unique(), &instruction_data);
         let mut expected = vec![0];
         expected.extend_from_slice(&offset.to_le_bytes());
         expected.extend_from_slice(&slot.to_le_bytes());
         expected.extend_from_slice(&node_pubkey.to_bytes());
+        expected.extend_from_slice(&shred_1_merkle_root.to_bytes());
+        expected.extend_from_slice(&shred_1_signature);
+        expected.extend_from_slice(&shred_2_merkle_root.to_bytes());
+        expected.extend_from_slice(&shred_2_signature);
         assert_eq!(instruction.data, expected);
 
         assert_eq!(
@@ -273,6 +254,10 @@ mod tests {
         assert_eq!(instruction_data.offset, offset.into());
         assert_eq!(instruction_data.slot, slot.into());
         assert_eq!(instruction_data.node_pubkey, node_pubkey);
+        assert_eq!(instruction_data.shred_1_merkle_root, shred_1_merkle_root);
+        assert_eq!(instruction_data.shred_1_signature, shred_1_signature);
+        assert_eq!(instruction_data.shred_2_merkle_root, shred_2_merkle_root);
+        assert_eq!(instruction_data.shred_2_signature, shred_2_signature);
     }
 
     #[test]

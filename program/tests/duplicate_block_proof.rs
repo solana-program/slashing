@@ -21,13 +21,13 @@ use {
         transaction::{Transaction, TransactionError},
     },
     solana_signature::SIGNATURE_BYTES,
-    spl_pod::bytemuck::pod_get_packed_len,
+    spl_pod::{bytemuck::pod_get_packed_len, primitives::PodU64},
     spl_record::{instruction as record, state::RecordData},
     spl_slashing::{
         duplicate_block_proof::DuplicateBlockProofData,
         error::SlashingError,
         id,
-        instruction::{duplicate_block_proof_with_sigverify, DuplicateBlockProofSigverifyData},
+        instruction::{duplicate_block_proof_with_sigverify, DuplicateBlockProofInstructionData},
         processor::process_instruction,
         state::ProofType,
     },
@@ -124,20 +124,16 @@ fn slashing_instructions(
     shred1: &Shred,
     shred2: &Shred,
 ) -> [Instruction; 2] {
-    let sigverify_data = DuplicateBlockProofSigverifyData {
+    let instruction_data = DuplicateBlockProofInstructionData {
+        slot: PodU64::from(slot),
+        offset: PodU64::from(RecordData::WRITABLE_START_INDEX as u64),
+        node_pubkey,
         shred_1_merkle_root: shred1.merkle_root().unwrap(),
         shred_1_signature: (*shred1.signature()).into(),
         shred_2_merkle_root: shred2.merkle_root().unwrap(),
         shred_2_signature: (*shred2.signature()).into(),
     };
-    duplicate_block_proof_with_sigverify(
-        proof_account,
-        RecordData::WRITABLE_START_INDEX as u64,
-        slot,
-        node_pubkey,
-        &sigverify_data,
-        1,
-    )
+    duplicate_block_proof_with_sigverify(proof_account, &instruction_data, 1)
 }
 
 pub fn new_rand_data_shred<R: Rng>(
