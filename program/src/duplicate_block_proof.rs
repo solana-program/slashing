@@ -32,8 +32,8 @@ const NUM_VERIFICATIONS_IN_INSTRUCTION: usize = 2;
 pub struct DuplicateBlockProofContext<'a> {
     pub(crate) expected_pubkey: &'a Pubkey,
     pub(crate) expected_shred1_merkle_root: &'a Hash,
-    pub(crate) expected_shred2_merkle_root: &'a Hash,
     pub(crate) expected_shred1_signature: &'a [u8; SIGNATURE_BYTES],
+    pub(crate) expected_shred2_merkle_root: &'a Hash,
     pub(crate) expected_shred2_signature: &'a [u8; SIGNATURE_BYTES],
 }
 
@@ -68,8 +68,8 @@ impl<'a> DuplicateBlockProofContext<'a> {
         Ok(Self {
             expected_pubkey: signature_verifications[0].pubkey,
             expected_shred1_merkle_root,
-            expected_shred2_merkle_root,
             expected_shred1_signature: signature_verifications[0].signature,
+            expected_shred2_merkle_root,
             expected_shred2_signature: signature_verifications[1].signature,
         })
     }
@@ -321,7 +321,7 @@ fn check_shreds(slot: Slot, shred1: &Shred, shred2: &Shred) -> Result<(), Slashi
 }
 
 /// Verify that `shred1` and `shred2` are correctly signed by `node_pubkey`.
-/// Leader's sign the merkle root of each shred with their pubkey.
+/// Leaders sign the merkle root of each shred with their pubkey.
 /// We use the context returned via instruction introspection to verify that
 /// instructions representing:
 ///     - `node_pubkey.verify(shred1.signature, shred1.merkle_root)`
@@ -1133,9 +1133,9 @@ mod tests {
             new_rand_data_shred(&mut rng, next_shred_index, &shredder, &leader, true, true);
 
         let (proof_data, context) = generate_proof_data(&leader_pubkey, &shred1, &shred2);
-        assert!(proof_data
+        proof_data
             .verify_proof(context, SLOT, &leader_pubkey)
-            .is_ok());
+            .unwrap();
 
         let bad_pubkey = Pubkey::new_unique();
         let bad_merkle_root = Hash::new_unique();
