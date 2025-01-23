@@ -124,7 +124,12 @@ impl<'a> SignatureVerification<'a> {
         if sigverify_ix.program_id != ed25519_program::id() {
             return Err(SlashingError::MissingSignatureVerification);
         }
-        if sigverify_ix.data[0] < NUM_VERIFICATIONS as u8 {
+        let num_signatures = u16::from_le_bytes(
+            sigverify_ix.data[0..2]
+                .try_into()
+                .map_err(|_| SlashingError::MissingSignatureVerification)?,
+        );
+        if num_signatures < NUM_VERIFICATIONS as u16 {
             return Err(SlashingError::MissingSignatureVerification);
         }
         let expected_data_size = NUM_VERIFICATIONS
