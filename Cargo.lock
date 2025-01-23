@@ -6372,7 +6372,6 @@ dependencies = [
 name = "spl-slashing"
 version = "0.1.0"
 dependencies = [
- "arrayvec",
  "bincode",
  "bitflags 2.7.0",
  "bytemuck",
