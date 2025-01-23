@@ -408,13 +408,10 @@ mod tests {
     fn generate_proof_data<'a>(
         leader: &'a Pubkey,
         shred1: &'a SolanaShred,
+        expected_shred1_merkle_root: &'a Hash,
         shred2: &'a SolanaShred,
+        expected_shred2_merkle_root: &'a Hash,
     ) -> (DuplicateBlockProofData<'a>, DuplicateBlockProofContext<'a>) {
-        // Hack to simulate the merkle roots being stored in instruction data
-        let expected_shred1_merkle_root =
-            unsafe { &*Box::into_raw(Box::new(shred1.merkle_root().unwrap_or_default())) };
-        let expected_shred2_merkle_root =
-            unsafe { &*Box::into_raw(Box::new(shred2.merkle_root().unwrap_or_default())) };
         let context = DuplicateBlockProofContext {
             expected_pubkey: leader,
             expected_shred1_merkle_root,
@@ -509,7 +506,10 @@ mod tests {
             (data_shred.clone(), legacy_coding_shred.clone()),
         ];
         for (shred1, shred2) in test_cases.iter().flat_map(|(a, b)| [(a, b), (b, a)]) {
-            let (proof_data, context) = generate_proof_data(&leader_pubkey, shred1, shred2);
+            let shred1_mr = Hash::default();
+            let shred2_mr = Hash::default();
+            let (proof_data, context) =
+                generate_proof_data(&leader_pubkey, shred1, &shred1_mr, shred2, &shred2_mr);
             assert_eq!(
                 proof_data
                     .verify_proof(context, SLOT, &leader_pubkey)
@@ -569,7 +569,10 @@ mod tests {
         ];
 
         for (shred1, shred2) in test_cases.iter().flat_map(|(a, b)| [(a, b), (b, a)]) {
-            let (proof_data, context) = generate_proof_data(&leader_pubkey, shred1, shred2);
+            let shred1_mr = shred1.merkle_root().unwrap();
+            let shred2_mr = shred2.merkle_root().unwrap();
+            let (proof_data, context) =
+                generate_proof_data(&leader_pubkey, shred1, &shred1_mr, shred2, &shred2_mr);
             assert_eq!(
                 proof_data
                     .verify_proof(context, SLOT, &leader_pubkey)
@@ -590,7 +593,10 @@ mod tests {
             new_rand_data_shred(&mut rng, next_shred_index, &shredder, &leader, true, true);
         let shred2 =
             new_rand_data_shred(&mut rng, next_shred_index, &shredder, &leader, true, true);
-        let (proof_data, context) = generate_proof_data(&leader_pubkey, &shred1, &shred2);
+        let shred1_mr = shred1.merkle_root().unwrap();
+        let shred2_mr = shred2.merkle_root().unwrap();
+        let (proof_data, context) =
+            generate_proof_data(&leader_pubkey, &shred1, &shred1_mr, &shred2, &shred2_mr);
         proof_data
             .verify_proof(context, SLOT, &leader_pubkey)
             .unwrap();
@@ -615,7 +621,10 @@ mod tests {
         ];
 
         for (shred1, shred2) in test_cases.into_iter() {
-            let (proof_data, context) = generate_proof_data(&leader_pubkey, &shred1, &shred2);
+            let shred1_mr = shred1.merkle_root().unwrap();
+            let shred2_mr = shred2.merkle_root().unwrap();
+            let (proof_data, context) =
+                generate_proof_data(&leader_pubkey, &shred1, &shred1_mr, &shred2, &shred2_mr);
             assert_eq!(
                 proof_data
                     .verify_proof(context, SLOT, &leader_pubkey)
@@ -662,7 +671,10 @@ mod tests {
         ];
 
         for (shred1, shred2) in test_cases.iter().flat_map(|(a, b)| [(a, b), (b, a)]) {
-            let (proof_data, context) = generate_proof_data(&leader_pubkey, shred1, shred2);
+            let shred1_mr = shred1.merkle_root().unwrap();
+            let shred2_mr = shred2.merkle_root().unwrap();
+            let (proof_data, context) =
+                generate_proof_data(&leader_pubkey, shred1, &shred1_mr, shred2, &shred2_mr);
             proof_data
                 .verify_proof(context, SLOT, &leader_pubkey)
                 .unwrap();
@@ -707,7 +719,10 @@ mod tests {
         ];
 
         for (shred1, shred2) in test_cases.iter().flat_map(|(a, b)| [(a, b), (b, a)]) {
-            let (proof_data, context) = generate_proof_data(&leader_pubkey, shred1, shred2);
+            let shred1_mr = shred1.merkle_root().unwrap();
+            let shred2_mr = shred2.merkle_root().unwrap();
+            let (proof_data, context) =
+                generate_proof_data(&leader_pubkey, shred1, &shred1_mr, shred2, &shred2_mr);
             assert_eq!(
                 proof_data
                     .verify_proof(context, SLOT, &leader_pubkey)
@@ -752,7 +767,10 @@ mod tests {
         ];
 
         for (shred1, shred2) in test_cases.iter().flat_map(|(a, b)| [(a, b), (b, a)]) {
-            let (proof_data, context) = generate_proof_data(&leader_pubkey, shred1, shred2);
+            let shred1_mr = shred1.merkle_root().unwrap();
+            let shred2_mr = shred2.merkle_root().unwrap();
+            let (proof_data, context) =
+                generate_proof_data(&leader_pubkey, shred1, &shred1_mr, shred2, &shred2_mr);
             proof_data
                 .verify_proof(context, SLOT, &leader_pubkey)
                 .unwrap();
@@ -814,7 +832,10 @@ mod tests {
         ];
 
         for (shred1, shred2) in test_cases.iter().flat_map(|(a, b)| [(a, b), (b, a)]) {
-            let (proof_data, context) = generate_proof_data(&leader_pubkey, shred1, shred2);
+            let shred1_mr = shred1.merkle_root().unwrap();
+            let shred2_mr = shred2.merkle_root().unwrap();
+            let (proof_data, context) =
+                generate_proof_data(&leader_pubkey, shred1, &shred1_mr, shred2, &shred2_mr);
             assert_eq!(
                 proof_data
                     .verify_proof(context, SLOT, &leader_pubkey)
@@ -844,7 +865,10 @@ mod tests {
             (coding_shreds[0].clone(), coding_shreds_smaller[1].clone()),
         ];
         for (shred1, shred2) in test_cases.iter().flat_map(|(a, b)| [(a, b), (b, a)]) {
-            let (proof_data, context) = generate_proof_data(&leader_pubkey, shred1, shred2);
+            let shred1_mr = shred1.merkle_root().unwrap();
+            let shred2_mr = shred2.merkle_root().unwrap();
+            let (proof_data, context) =
+                generate_proof_data(&leader_pubkey, shred1, &shred1_mr, shred2, &shred2_mr);
             proof_data
                 .verify_proof(context, SLOT, &leader_pubkey)
                 .unwrap();
@@ -901,7 +925,10 @@ mod tests {
         ];
 
         for (shred1, shred2) in test_cases.iter().flat_map(|(a, b)| [(a, b), (b, a)]) {
-            let (proof_data, context) = generate_proof_data(&leader_pubkey, shred1, shred2);
+            let shred1_mr = shred1.merkle_root().unwrap();
+            let shred2_mr = shred2.merkle_root().unwrap();
+            let (proof_data, context) =
+                generate_proof_data(&leader_pubkey, shred1, &shred1_mr, shred2, &shred2_mr);
             assert_eq!(
                 proof_data
                     .verify_proof(context, SLOT, &leader_pubkey)
@@ -950,7 +977,10 @@ mod tests {
         ];
 
         for (shred1, shred2) in test_cases.iter().flat_map(|(a, b)| [(a, b), (b, a)]) {
-            let (proof_data, context) = generate_proof_data(&leader_pubkey, shred1, shred2);
+            let shred1_mr = shred1.merkle_root().unwrap();
+            let shred2_mr = shred2.merkle_root().unwrap();
+            let (proof_data, context) =
+                generate_proof_data(&leader_pubkey, shred1, &shred1_mr, shred2, &shred2_mr);
             assert_eq!(
                 proof_data
                     .verify_proof(context, SLOT, &leader_pubkey)
@@ -1003,7 +1033,10 @@ mod tests {
             (coding_shred, coding_shred_different_retransmitter),
         ];
         for (shred1, shred2) in test_cases.iter().flat_map(|(a, b)| [(a, b), (b, a)]) {
-            let (proof_data, context) = generate_proof_data(&leader_pubkey, shred1, shred2);
+            let shred1_mr = shred1.merkle_root().unwrap();
+            let shred2_mr = shred2.merkle_root().unwrap();
+            let (proof_data, context) =
+                generate_proof_data(&leader_pubkey, shred1, &shred1_mr, shred2, &shred2_mr);
             assert_eq!(
                 proof_data
                     .verify_proof(context, SLOT, &leader_pubkey)
@@ -1047,7 +1080,10 @@ mod tests {
             ),
         ];
         for (shred1, shred2) in test_cases.iter().flat_map(|(a, b)| [(a, b), (b, a)]) {
-            let (proof_data, context) = generate_proof_data(&leader_pubkey, shred1, shred2);
+            let shred1_mr = shred1.merkle_root().unwrap();
+            let shred2_mr = shred2.merkle_root().unwrap();
+            let (proof_data, context) =
+                generate_proof_data(&leader_pubkey, shred1, &shred1_mr, shred2, &shred2_mr);
             proof_data
                 .verify_proof(context, SLOT, &leader_pubkey)
                 .unwrap();
@@ -1110,7 +1146,10 @@ mod tests {
             .iter()
             .flat_map(|(a, b, c)| [(a, b, c), (b, a, c)])
         {
-            let (proof_data, context) = generate_proof_data(&leader_pubkey, shred1, shred2);
+            let shred1_mr = shred1.merkle_root().unwrap();
+            let shred2_mr = shred2.merkle_root().unwrap();
+            let (proof_data, context) =
+                generate_proof_data(&leader_pubkey, shred1, &shred1_mr, shred2, &shred2_mr);
             assert_eq!(
                 proof_data
                     .verify_proof(context, SLOT, &leader_pubkey)
@@ -1132,7 +1171,10 @@ mod tests {
         let shred2 =
             new_rand_data_shred(&mut rng, next_shred_index, &shredder, &leader, true, true);
 
-        let (proof_data, context) = generate_proof_data(&leader_pubkey, &shred1, &shred2);
+        let shred1_mr = shred1.merkle_root().unwrap();
+        let shred2_mr = shred2.merkle_root().unwrap();
+        let (proof_data, context) =
+            generate_proof_data(&leader_pubkey, &shred1, &shred1_mr, &shred2, &shred2_mr);
         proof_data
             .verify_proof(context, SLOT, &leader_pubkey)
             .unwrap();
