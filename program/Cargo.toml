@@ -12,7 +12,6 @@ no-entrypoint = []
 test-sbf = []
 
 [dependencies]
-arrayvec = "0.7.6"
 bitflags = { version = "2.7.0", features = ["serde"] }
 bytemuck = { version = "1.21.0", features = ["derive"] }
 num_enum = "0.7.3"

@@ -1,7 +1,6 @@
 //! Parsing signature verification results through instruction introspection
 use {
     crate::error::SlashingError,
-    arrayvec::ArrayVec,
     bytemuck::{Pod, Zeroable},
     solana_program::{
         account_info::AccountInfo,
@@ -12,6 +11,7 @@ use {
         sysvar::instructions::{get_instruction_relative, load_current_index_checked},
     },
     solana_signature::SIGNATURE_BYTES,
+    std::mem::MaybeUninit,
 };
 
 const SIGNATURE_OFFSETS_SERIALIZED_SIZE: usize = 14;
@@ -114,7 +114,7 @@ impl<'a> SignatureVerification<'a> {
         instructions_sysvar: &'a AccountInfo<'b>,
         relative_index: i64,
     ) -> Result<[SignatureVerification<'a>; NUM_VERIFICATIONS], SlashingError> {
-        let mut verifications = ArrayVec::<SignatureVerification<'a>, NUM_VERIFICATIONS>::new();
+        let mut verifications = [MaybeUninit::<SignatureVerification>::uninit(); NUM_VERIFICATIONS];
 
         // Instruction inspection to unpack successful signature verifications
         let current_index = load_current_index_checked(instructions_sysvar)
@@ -134,7 +134,7 @@ impl<'a> SignatureVerification<'a> {
             return Err(SlashingError::InvalidSignatureVerification);
         }
 
-        for i in 0..NUM_VERIFICATIONS {
+        for (i, verification) in verifications.iter_mut().enumerate().take(NUM_VERIFICATIONS) {
             let start = i
                 .saturating_mul(SIGNATURE_OFFSETS_SERIALIZED_SIZE)
                 .saturating_add(SIGNATURE_OFFSETS_START);
@@ -174,10 +174,9 @@ impl<'a> SignatureVerification<'a> {
                 offsets.message_data_size as usize,
             )?;
 
-            verifications.push(SignatureVerification::new(pubkey, message, signature)?);
+            *verification =
+                MaybeUninit::new(SignatureVerification::new(pubkey, message, signature)?);
         }
-        verifications
-            .into_inner()
-            .map_err(|_| SlashingError::InvalidSignatureVerification)
+        unsafe { std::mem::transmute_copy(&verifications) }
     }
 }
