@@ -133,24 +133,19 @@ pub fn duplicate_block_proof(
 /// `sigverify_data` should equal the `(shredx.merkle_root, shredx.signature)`
 /// specified in the proof account
 ///
-/// `slashing_instruction_index` should be set to the instruction index of the
-/// slashing instruction in the final transaction. By default this will be `1`,
-/// if you are only sending the results of this function in the transaction.
-///
 /// Returns two instructions, the sigverify and the slashing instruction. These
-/// must be sent consecutively in a transaction with the same ordering to
-/// function properly.
+/// must be sent consecutively as the first two instructions in a transaction
+/// with the same ordering to function properly.
 pub fn duplicate_block_proof_with_sigverify(
     proof_account: &Pubkey,
     instruction_data: &DuplicateBlockProofInstructionData,
-    slashing_instruction_index: u16,
 ) -> [Instruction; 2] {
     let slashing_ix = duplicate_block_proof(proof_account, instruction_data);
-    let signature_instruction_index = slashing_instruction_index;
+    let signature_instruction_index = 1;
     let public_key_offset = DuplicateBlockProofInstructionData::NODE_PUBKEY_OFFSET;
-    let public_key_instruction_index = slashing_instruction_index;
+    let public_key_instruction_index = 1;
     let message_data_size = HASH_BYTES as u16;
-    let message_instruction_index = slashing_instruction_index;
+    let message_instruction_index = 1;
 
     let shred1_sigverify_offset = Ed25519SignatureOffsets {
         signature_offset: DuplicateBlockProofInstructionData::SIGNATURE_1_OFFSET,
@@ -200,7 +195,7 @@ pub(crate) fn construct_instructions_and_sysvar(
     }
 
     let instructions =
-        duplicate_block_proof_with_sigverify(&Pubkey::new_unique(), instruction_data, 1);
+        duplicate_block_proof_with_sigverify(&Pubkey::new_unique(), instruction_data);
     let borrowed_instructions: Vec<BorrowedInstruction> =
         instructions.iter().map(borrow_instruction).collect();
     let mut instructions_sysvar_data =

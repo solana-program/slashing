@@ -133,7 +133,7 @@ fn slashing_instructions(
         shred_2_merkle_root: shred2.merkle_root().unwrap(),
         shred_2_signature: (*shred2.signature()).into(),
     };
-    duplicate_block_proof_with_sigverify(proof_account, &instruction_data, 1)
+    duplicate_block_proof_with_sigverify(proof_account, &instruction_data)
 }
 
 pub fn new_rand_data_shred<R: Rng>(
