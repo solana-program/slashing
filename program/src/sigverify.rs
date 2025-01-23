@@ -36,10 +36,8 @@ impl Ed25519SignatureOffsets {
                 .saturating_add(SIGNATURE_OFFSETS_SERIALIZED_SIZE.saturating_mul(offsets.len())),
         );
 
-        let num_signatures: u8 = offsets.len() as u8;
-
-        // add padding byte so that offset structure is aligned
-        instruction_data.extend_from_slice(bytemuck::bytes_of(&[num_signatures, 0]));
+        let num_signatures = offsets.len() as u16;
+        instruction_data.extend_from_slice(&num_signatures.to_le_bytes());
 
         for offsets in offsets {
             instruction_data.extend_from_slice(bytemuck::bytes_of(offsets));

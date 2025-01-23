@@ -105,11 +105,10 @@ pub(crate) fn decode_instruction_type(input: &[u8]) -> Result<SlashingInstructio
 
 /// Utility function for decoding instruction data
 pub(crate) fn decode_instruction_data<T: Pod>(input_with_type: &[u8]) -> Result<&T, ProgramError> {
-    let data_len = pod_get_packed_len::<T>().saturating_add(1);
-    if input_with_type.len() != data_len {
+    if input_with_type.len() != pod_get_packed_len::<T>().saturating_add(1) {
         Err(ProgramError::InvalidInstructionData)
     } else {
-        pod_from_bytes(&input_with_type[1..data_len])
+        pod_from_bytes(&input_with_type[1..])
     }
 }
 
