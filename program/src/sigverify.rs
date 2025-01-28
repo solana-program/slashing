@@ -114,7 +114,8 @@ impl<'a> SignatureVerification<'a> {
         instructions_sysvar: &'a AccountInfo<'b>,
         relative_index: i64,
     ) -> Result<[SignatureVerification<'a>; NUM_VERIFICATIONS], SlashingError> {
-        let mut verifications = [MaybeUninit::<SignatureVerification>::uninit(); NUM_VERIFICATIONS];
+        let mut verifications =
+            [const { MaybeUninit::<SignatureVerification>::uninit() }; NUM_VERIFICATIONS];
 
         // Instruction inspection to unpack successful signature verifications
         let current_index = load_current_index_checked(instructions_sysvar)
@@ -179,9 +180,9 @@ impl<'a> SignatureVerification<'a> {
                 offsets.message_data_size as usize,
             )?;
 
-            *verification =
-                MaybeUninit::new(SignatureVerification::new(pubkey, message, signature)?);
+            verification.write(SignatureVerification::new(pubkey, message, signature)?);
         }
-        unsafe { std::mem::transmute_copy(&verifications) }
+        // Replace with `array_assume_init` once stabilized
+        Ok(verifications.map(|verification| unsafe { verification.assume_init() }))
     }
 }
