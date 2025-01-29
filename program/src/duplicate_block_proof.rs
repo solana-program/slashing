@@ -421,8 +421,8 @@ mod tests {
         };
         (
             DuplicateBlockProofData {
-                shred1: shred1.payload().as_slice(),
-                shred2: shred2.payload().as_slice(),
+                shred1: shred1.payload().as_ref(),
+                shred2: shred2.payload().as_ref(),
             },
             context,
         )

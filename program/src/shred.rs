@@ -533,7 +533,7 @@ pub(crate) mod tests {
                 .into_iter()
                 .chain(coding_solana_shreds.into_iter())
             {
-                let payload = solana_shred.payload().as_slice();
+                let payload = solana_shred.payload().as_ref();
                 let shred = Shred::new_from_payload(payload).unwrap();
 
                 assert_eq!(shred.slot().unwrap(), solana_shred.slot());

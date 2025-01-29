@@ -235,8 +235,8 @@ async fn valid_proof_data() {
     );
 
     let duplicate_proof = DuplicateBlockProofData {
-        shred1: shred1.payload().as_slice(),
-        shred2: shred2.payload().as_slice(),
+        shred1: shred1.payload().as_ref(),
+        shred2: shred2.payload().as_ref(),
     };
     let data = duplicate_proof.pack();
 
@@ -281,8 +281,8 @@ async fn valid_proof_coding() {
     );
 
     let duplicate_proof = DuplicateBlockProofData {
-        shred1: shred1.payload().as_slice(),
-        shred2: shred2.payload().as_slice(),
+        shred1: shred1.payload().as_ref(),
+        shred2: shred2.payload().as_ref(),
     };
     let data = duplicate_proof.pack();
 
@@ -319,8 +319,8 @@ async fn invalid_proof_data() {
     let shred2 = shred1.clone();
 
     let duplicate_proof = DuplicateBlockProofData {
-        shred1: shred1.payload().as_slice(),
-        shred2: shred2.payload().as_slice(),
+        shred1: shred1.payload().as_ref(),
+        shred2: shred2.payload().as_ref(),
     };
     let data = duplicate_proof.pack();
 
@@ -368,8 +368,8 @@ async fn invalid_proof_coding() {
         "Expecting no erasure conflict"
     );
     let duplicate_proof = DuplicateBlockProofData {
-        shred1: shred1.payload().as_slice(),
-        shred2: shred2.payload().as_slice(),
+        shred1: shred1.payload().as_ref(),
+        shred2: shred2.payload().as_ref(),
     };
     let data = duplicate_proof.pack();
 
@@ -414,8 +414,8 @@ async fn missing_sigverify() {
         new_rand_coding_shreds(&mut rng, next_shred_index, 10, &shredder, &leader)[1].clone();
 
     let duplicate_proof = DuplicateBlockProofData {
-        shred1: shred1.payload().as_slice(),
-        shred2: shred2.payload().as_slice(),
+        shred1: shred1.payload().as_ref(),
+        shred2: shred2.payload().as_ref(),
     };
     let data = duplicate_proof.pack();
 
@@ -489,8 +489,8 @@ async fn improper_sigverify() {
         new_rand_coding_shreds(&mut rng, next_shred_index, 10, &shredder, &leader)[1].clone();
 
     let duplicate_proof = DuplicateBlockProofData {
-        shred1: shred1.payload().as_slice(),
-        shred2: shred2.payload().as_slice(),
+        shred1: shred1.payload().as_ref(),
+        shred2: shred2.payload().as_ref(),
     };
     let data = duplicate_proof.pack();
 
