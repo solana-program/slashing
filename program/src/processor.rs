@@ -131,8 +131,8 @@ mod tests {
             shred_2_signature: shred2.signature().as_ref().try_into().unwrap(),
         };
         let proof_data = DuplicateBlockProofData {
-            shred1: shred1.payload().as_slice(),
-            shred2: shred2.payload().as_slice(),
+            shred1: shred1.payload().as_ref(),
+            shred2: shred2.payload().as_ref(),
         };
         (sigverify_data, proof_data.pack())
     }
