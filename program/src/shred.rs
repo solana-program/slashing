@@ -566,7 +566,7 @@ pub(crate) mod tests {
                     shred.merkle_root().unwrap(),
                     solana_shred.merkle_root().unwrap()
                 );
-                assert_eq!(&shred.payload, solana_shred.payload());
+                assert_eq!(shred.payload, AsRef::<[u8]>::as_ref(solana_shred.payload()));
             }
         }
     }
