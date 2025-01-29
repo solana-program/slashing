@@ -12,20 +12,26 @@ use {
     solana_sdk::{
         clock::{Clock, Slot},
         decode_error::DecodeError,
-        hash::Hash,
-        instruction::InstructionError,
+        ed25519_instruction::SIGNATURE_OFFSETS_START,
+        hash::{Hash, HASH_BYTES},
+        instruction::{Instruction, InstructionError},
         rent::Rent,
         signature::{Keypair, Signer},
         system_instruction, system_transaction,
         transaction::{Transaction, TransactionError},
     },
-    spl_pod::bytemuck::pod_get_packed_len,
+    solana_signature::SIGNATURE_BYTES,
+    spl_pod::{bytemuck::pod_get_packed_len, primitives::PodU64},
     spl_record::{instruction as record, state::RecordData},
     spl_slashing::{
-        duplicate_block_proof::DuplicateBlockProofData, error::SlashingError, id, instruction,
-        processor::process_instruction, state::ProofType,
+        duplicate_block_proof::DuplicateBlockProofData,
+        error::SlashingError,
+        id,
+        instruction::{duplicate_block_proof_with_sigverify, DuplicateBlockProofInstructionData},
+        processor::process_instruction,
+        state::ProofType,
     },
-    std::sync::Arc,
+    std::{assert_ne, sync::Arc},
 };
 
 const SLOT: Slot = 53084024;
@@ -109,6 +115,25 @@ async fn write_proof(
 
         offset = offset.checked_add(chunk_size).unwrap();
     }
+}
+
+fn slashing_instructions(
+    proof_account: &Pubkey,
+    slot: Slot,
+    node_pubkey: Pubkey,
+    shred1: &Shred,
+    shred2: &Shred,
+) -> [Instruction; 2] {
+    let instruction_data = DuplicateBlockProofInstructionData {
+        slot: PodU64::from(slot),
+        offset: PodU64::from(RecordData::WRITABLE_START_INDEX as u64),
+        node_pubkey,
+        shred_1_merkle_root: shred1.merkle_root().unwrap(),
+        shred_1_signature: (*shred1.signature()).into(),
+        shred_2_merkle_root: shred2.merkle_root().unwrap(),
+        shred_2_signature: (*shred2.signature()).into(),
+    };
+    duplicate_block_proof_with_sigverify(proof_account, &instruction_data)
 }
 
 pub fn new_rand_data_shred<R: Rng>(
@@ -219,12 +244,7 @@ async fn valid_proof_data() {
     write_proof(&mut context, &authority, &account, &data).await;
 
     let transaction = Transaction::new_signed_with_payer(
-        &[instruction::duplicate_block_proof(
-            &account.pubkey(),
-            RecordData::WRITABLE_START_INDEX as u64,
-            slot,
-            leader.pubkey(),
-        )],
+        &slashing_instructions(&account.pubkey(), slot, leader.pubkey(), &shred1, &shred2),
         Some(&context.payer.pubkey()),
         &[&context.payer],
         context.last_blockhash,
@@ -254,9 +274,10 @@ async fn valid_proof_coding() {
     let shred2 =
         new_rand_coding_shreds(&mut rng, next_shred_index, 10, &shredder, &leader)[1].clone();
 
-    assert!(
-        ErasureMeta::check_erasure_consistency(&shred1, &shred2),
-        "Expected erasure consistency failure",
+    assert_ne!(
+        shred1.merkle_root().unwrap(),
+        shred2.merkle_root().unwrap(),
+        "Expected merkle root failure"
     );
 
     let duplicate_proof = DuplicateBlockProofData {
@@ -269,12 +290,7 @@ async fn valid_proof_coding() {
     write_proof(&mut context, &authority, &account, &data).await;
 
     let transaction = Transaction::new_signed_with_payer(
-        &[instruction::duplicate_block_proof(
-            &account.pubkey(),
-            RecordData::WRITABLE_START_INDEX as u64,
-            slot,
-            leader.pubkey(),
-        )],
+        &slashing_instructions(&account.pubkey(), slot, leader.pubkey(), &shred1, &shred2),
         Some(&context.payer.pubkey()),
         &[&context.payer],
         context.last_blockhash,
@@ -312,12 +328,7 @@ async fn invalid_proof_data() {
     write_proof(&mut context, &authority, &account, &data).await;
 
     let transaction = Transaction::new_signed_with_payer(
-        &[instruction::duplicate_block_proof(
-            &account.pubkey(),
-            RecordData::WRITABLE_START_INDEX as u64,
-            slot,
-            leader.pubkey(),
-        )],
+        &slashing_instructions(&account.pubkey(), slot, leader.pubkey(), &shred1, &shred2),
         Some(&context.payer.pubkey()),
         &[&context.payer],
         context.last_blockhash,
@@ -328,7 +339,7 @@ async fn invalid_proof_data() {
         .await
         .unwrap_err()
         .unwrap();
-    let TransactionError::InstructionError(0, InstructionError::Custom(code)) = err else {
+    let TransactionError::InstructionError(1, InstructionError::Custom(code)) = err else {
         panic!("Invalid error {err:?}");
     };
     let err: SlashingError = SlashingError::decode_custom_error_to_enum(code).unwrap();
@@ -366,12 +377,59 @@ async fn invalid_proof_coding() {
     write_proof(&mut context, &authority, &account, &data).await;
 
     let transaction = Transaction::new_signed_with_payer(
-        &[instruction::duplicate_block_proof(
-            &account.pubkey(),
-            RecordData::WRITABLE_START_INDEX as u64,
-            slot,
-            leader.pubkey(),
-        )],
+        &slashing_instructions(&account.pubkey(), slot, leader.pubkey(), &shred1, &shred2),
+        Some(&context.payer.pubkey()),
+        &[&context.payer],
+        context.last_blockhash,
+    );
+    let err = context
+        .banks_client
+        .process_transaction(transaction)
+        .await
+        .unwrap_err()
+        .unwrap();
+    let TransactionError::InstructionError(1, InstructionError::Custom(code)) = err else {
+        panic!("Invalid error {err:?}");
+    };
+    let err: SlashingError = SlashingError::decode_custom_error_to_enum(code).unwrap();
+    assert_eq!(err, SlashingError::InvalidErasureMetaConflict);
+}
+
+#[tokio::test]
+async fn missing_sigverify() {
+    let mut context = program_test().start_with_context().await;
+    setup_clock(&mut context).await;
+
+    let authority = Keypair::new();
+    let account = Keypair::new();
+
+    let mut rng = rand::thread_rng();
+    let leader = Arc::new(Keypair::new());
+    let (slot, parent_slot, reference_tick, version) = (SLOT, 53084023, 0, 0);
+    let shredder = Shredder::new(slot, parent_slot, reference_tick, version).unwrap();
+    let next_shred_index = rng.gen_range(0..32_000);
+    let shred1 =
+        new_rand_coding_shreds(&mut rng, next_shred_index, 10, &shredder, &leader)[0].clone();
+    let shred2 =
+        new_rand_coding_shreds(&mut rng, next_shred_index, 10, &shredder, &leader)[1].clone();
+
+    let duplicate_proof = DuplicateBlockProofData {
+        shred1: shred1.payload().as_slice(),
+        shred2: shred2.payload().as_slice(),
+    };
+    let data = duplicate_proof.pack();
+
+    initialize_duplicate_proof_account(&mut context, &authority, &account).await;
+    write_proof(&mut context, &authority, &account, &data).await;
+    // Remove the sigverify
+    let instructions =
+        [
+            slashing_instructions(&account.pubkey(), slot, leader.pubkey(), &shred1, &shred2)[1]
+                .clone(),
+        ];
+
+    let transaction = Transaction::new_signed_with_payer(
+        &instructions,
         Some(&context.payer.pubkey()),
         &[&context.payer],
         context.last_blockhash,
@@ -386,5 +444,113 @@ async fn invalid_proof_coding() {
         panic!("Invalid error {err:?}");
     };
     let err: SlashingError = SlashingError::decode_custom_error_to_enum(code).unwrap();
-    assert_eq!(err, SlashingError::InvalidErasureMetaConflict);
+    assert_eq!(err, SlashingError::MissingSignatureVerification);
+
+    // Only sigverify one of the shreds
+    let mut instructions =
+        slashing_instructions(&account.pubkey(), slot, leader.pubkey(), &shred1, &shred2);
+    instructions[0].data[0] = 1;
+
+    let transaction = Transaction::new_signed_with_payer(
+        &instructions,
+        Some(&context.payer.pubkey()),
+        &[&context.payer],
+        context.last_blockhash,
+    );
+    let err = context
+        .banks_client
+        .process_transaction(transaction)
+        .await
+        .unwrap_err()
+        .unwrap();
+    let TransactionError::InstructionError(1, InstructionError::Custom(code)) = err else {
+        panic!("Invalid error {err:?}");
+    };
+    let err: SlashingError = SlashingError::decode_custom_error_to_enum(code).unwrap();
+    assert_eq!(err, SlashingError::MissingSignatureVerification);
+}
+
+#[tokio::test]
+async fn improper_sigverify() {
+    let mut context = program_test().start_with_context().await;
+    setup_clock(&mut context).await;
+
+    let authority = Keypair::new();
+    let account = Keypair::new();
+
+    let mut rng = rand::thread_rng();
+    let leader = Arc::new(Keypair::new());
+    let (slot, parent_slot, reference_tick, version) = (SLOT, 53084023, 0, 0);
+    let shredder = Shredder::new(slot, parent_slot, reference_tick, version).unwrap();
+    let next_shred_index = rng.gen_range(0..32_000);
+    let shred1 =
+        new_rand_coding_shreds(&mut rng, next_shred_index, 10, &shredder, &leader)[0].clone();
+    let shred2 =
+        new_rand_coding_shreds(&mut rng, next_shred_index, 10, &shredder, &leader)[1].clone();
+
+    let duplicate_proof = DuplicateBlockProofData {
+        shred1: shred1.payload().as_slice(),
+        shred2: shred2.payload().as_slice(),
+    };
+    let data = duplicate_proof.pack();
+
+    initialize_duplicate_proof_account(&mut context, &authority, &account).await;
+    write_proof(&mut context, &authority, &account, &data).await;
+
+    // Replace one of the signature verifications with a random message instead
+    let message = Hash::new_unique().to_bytes();
+    let signature = <[u8; SIGNATURE_BYTES]>::from(leader.sign_message(&message));
+    let mut instructions =
+        slashing_instructions(&account.pubkey(), slot, leader.pubkey(), &shred1, &shred2);
+    const MESSAGE_START: usize = 1 + 8 + 8 + 32;
+    const SIGNATURE_START: usize = MESSAGE_START + HASH_BYTES;
+    instructions[1].data[MESSAGE_START..SIGNATURE_START].copy_from_slice(&message);
+    instructions[1].data[SIGNATURE_START..SIGNATURE_START + SIGNATURE_BYTES]
+        .copy_from_slice(&signature);
+
+    let transaction = Transaction::new_signed_with_payer(
+        &instructions,
+        Some(&context.payer.pubkey()),
+        &[&context.payer],
+        context.last_blockhash,
+    );
+    let err = context
+        .banks_client
+        .process_transaction(transaction)
+        .await
+        .unwrap_err()
+        .unwrap();
+    let TransactionError::InstructionError(1, InstructionError::Custom(code)) = err else {
+        panic!("Invalid error {err:?}");
+    };
+    let err: SlashingError = SlashingError::decode_custom_error_to_enum(code).unwrap();
+    assert_eq!(err, SlashingError::SignatureVerificationMismatch);
+
+    // Put the sigverify data in the sigverify instruction (not allowed currently)
+    let mut instructions =
+        slashing_instructions(&account.pubkey(), slot, leader.pubkey(), &shred1, &shred2);
+    instructions[0].data[SIGNATURE_OFFSETS_START..SIGNATURE_OFFSETS_START + 2]
+        .copy_from_slice(&100u16.to_le_bytes());
+    instructions[0].data[SIGNATURE_OFFSETS_START + 2..SIGNATURE_OFFSETS_START + 4]
+        .copy_from_slice(&0u16.to_le_bytes());
+    instructions[0].data.extend_from_slice(&[0; 200]);
+    instructions[0].data[100..100 + SIGNATURE_BYTES]
+        .copy_from_slice(&<[u8; SIGNATURE_BYTES]>::from(*shred1.signature()));
+    let transaction = Transaction::new_signed_with_payer(
+        &instructions,
+        Some(&context.payer.pubkey()),
+        &[&context.payer],
+        context.last_blockhash,
+    );
+    let err = context
+        .banks_client
+        .process_transaction(transaction)
+        .await
+        .unwrap_err()
+        .unwrap();
+    let TransactionError::InstructionError(1, InstructionError::Custom(code)) = err else {
+        panic!("Invalid error {err:?}");
+    };
+    let err: SlashingError = SlashingError::decode_custom_error_to_enum(code).unwrap();
+    assert_eq!(err, SlashingError::InvalidSignatureVerification);
 }

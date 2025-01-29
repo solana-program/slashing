@@ -19,9 +19,16 @@ use {
         pubkey::Pubkey,
         sysvar::{clock::Clock, epoch_schedule::EpochSchedule, Sysvar},
     },
+    std::slice::Iter,
 };
 
-fn verify_proof_data<'a, T>(slot: Slot, pubkey: &Pubkey, proof_data: &'a [u8]) -> ProgramResult
+fn verify_proof_data<'a, 'b, T>(
+    slot: Slot,
+    pubkey: &Pubkey,
+    proof_data: &'a [u8],
+    instruction_data: &'a [u8],
+    accounts_info_iter: &'a mut Iter<'_, AccountInfo<'b>>,
+) -> ProgramResult
 where
     T: SlashingProofData<'a>,
 {
@@ -35,10 +42,9 @@ where
         return Err(SlashingError::ExceedsStatueOfLimitations.into());
     }
 
-    let proof_data: T =
-        T::unpack(proof_data).map_err(|_| SlashingError::ShredDeserializationError)?;
+    let (proof_data, context) = T::unpack(proof_data, instruction_data, accounts_info_iter)?;
 
-    SlashingProofData::verify_proof(proof_data, slot, pubkey)?;
+    SlashingProofData::verify_proof(proof_data, context, slot, pubkey)?;
 
     // TODO: follow up PR will record this violation in context state account. just
     // log for now.
@@ -58,16 +64,18 @@ pub fn process_instruction(
 ) -> ProgramResult {
     let instruction_type = decode_instruction_type(input)?;
     let account_info_iter = &mut accounts.iter();
-    let proof_data_info = next_account_info(account_info_iter);
+    let proof_data_info = next_account_info(account_info_iter)?;
 
     match instruction_type {
         SlashingInstruction::DuplicateBlockProof => {
             let data = decode_instruction_data::<DuplicateBlockProofInstructionData>(input)?;
-            let proof_data = &proof_data_info?.data.borrow()[u64::from(data.offset) as usize..];
+            let proof_data = &proof_data_info.data.borrow()[u64::from(data.offset) as usize..];
             verify_proof_data::<DuplicateBlockProofData>(
                 data.slot.into(),
                 &data.node_pubkey,
                 proof_data,
+                input,
+                account_info_iter,
             )?;
             Ok(())
         }
@@ -79,18 +87,23 @@ mod tests {
     use {
         super::verify_proof_data,
         crate::{
-            duplicate_block_proof::DuplicateBlockProofData, error::SlashingError,
+            duplicate_block_proof::DuplicateBlockProofData,
+            error::SlashingError,
+            instruction::{construct_instructions_and_sysvar, DuplicateBlockProofInstructionData},
             shred::tests::new_rand_data_shred,
         },
         rand::Rng,
         solana_ledger::shred::Shredder,
         solana_sdk::{
+            account_info::AccountInfo,
             clock::{Clock, Slot, DEFAULT_SLOTS_PER_EPOCH},
             epoch_schedule::EpochSchedule,
             program_error::ProgramError,
             signature::Keypair,
             signer::Signer,
+            sysvar::instructions::{self},
         },
+        spl_pod::primitives::PodU64,
         std::sync::{Arc, RwLock},
     };
 
@@ -99,7 +112,7 @@ mod tests {
         static ref CLOCK_SLOT: Arc<RwLock<Slot>> = Arc::new(RwLock::new(SLOT));
     }
 
-    fn generate_proof_data(leader: Arc<Keypair>) -> Vec<u8> {
+    fn generate_proof_data(leader: Arc<Keypair>) -> (DuplicateBlockProofInstructionData, Vec<u8>) {
         let mut rng = rand::thread_rng();
         let (slot, parent_slot, reference_tick, version) = (SLOT, SLOT - 1, 0, 0);
         let shredder = Shredder::new(slot, parent_slot, reference_tick, version).unwrap();
@@ -108,11 +121,20 @@ mod tests {
             new_rand_data_shred(&mut rng, next_shred_index, &shredder, &leader, true, true);
         let shred2 =
             new_rand_data_shred(&mut rng, next_shred_index, &shredder, &leader, true, true);
-        let proof = DuplicateBlockProofData {
+        let sigverify_data = DuplicateBlockProofInstructionData {
+            slot: PodU64::from(slot),
+            offset: PodU64::from(0),
+            node_pubkey: leader.pubkey(),
+            shred_1_merkle_root: shred1.merkle_root().unwrap(),
+            shred_2_merkle_root: shred2.merkle_root().unwrap(),
+            shred_1_signature: shred1.signature().as_ref().try_into().unwrap(),
+            shred_2_signature: shred2.signature().as_ref().try_into().unwrap(),
+        };
+        let proof_data = DuplicateBlockProofData {
             shred1: shred1.payload().as_slice(),
             shred2: shred2.payload().as_slice(),
         };
-        proof.pack()
+        (sigverify_data, proof_data.pack())
     }
 
     #[test]
@@ -157,10 +179,27 @@ mod tests {
 
         solana_sdk::program_stubs::set_syscall_stubs(Box::new(SyscallStubs {}));
         let leader = Arc::new(Keypair::new());
+        let (instruction_data, proof_data) = generate_proof_data(leader.clone());
+        let mut lamports = 0;
+        let (instructions, mut instructions_sysvar_data) =
+            construct_instructions_and_sysvar(&instruction_data);
+        let instructions_sysvar_account = AccountInfo::new(
+            &instructions::ID,
+            false,
+            true,
+            &mut lamports,
+            &mut instructions_sysvar_data,
+            &instructions::ID,
+            false,
+            0,
+        );
+
         verify_proof_data::<DuplicateBlockProofData>(
             SLOT,
             &leader.pubkey(),
-            &generate_proof_data(leader),
+            &proof_data,
+            &instructions[1].data,
+            &mut [instructions_sysvar_account].iter(),
         )
     }
 }
