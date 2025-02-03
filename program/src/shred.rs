@@ -479,7 +479,7 @@ pub(crate) mod tests {
             let tx = system_transaction::transfer(
                 &Keypair::new(),       // from
                 &Pubkey::new_unique(), // to
-                rng.gen(),             // lamports
+                rng.random(),          // lamports
                 Hash::new_unique(),    // recent blockhash
             );
             Entry::new(
@@ -495,7 +495,7 @@ pub(crate) mod tests {
             &entries,
             is_last_in_slot,
             // chained_merkle_root
-            Some(Hash::new_from_array(rng.gen())),
+            Some(Hash::new_from_array(rng.random())),
             next_shred_index,
             next_code_index, // next_code_index
             merkle_variant,
@@ -508,16 +508,16 @@ pub(crate) mod tests {
     fn test_solana_shred_parity() {
         // Verify that the deserialization functions match solana shred format
         for _ in 0..300 {
-            let mut rng = rand::thread_rng();
+            let mut rng = rand::rng();
             let leader = Arc::new(Keypair::new());
-            let slot = rng.gen_range(1..u64::MAX);
+            let slot = rng.random_range(1..u64::MAX);
             let parent_slot = slot - 1;
             let reference_tick = 0;
-            let version = rng.gen_range(0..u16::MAX);
+            let version = rng.random_range(0..u16::MAX);
             let shredder = Shredder::new(slot, parent_slot, reference_tick, version).unwrap();
-            let next_shred_index = rng.gen_range(0..671);
-            let next_code_index = rng.gen_range(0..781);
-            let is_last_in_slot = rng.gen_bool(0.5);
+            let next_shred_index = rng.random_range(0..671);
+            let next_code_index = rng.random_range(0..781);
+            let is_last_in_slot = rng.random_bool(0.5);
             let (data_solana_shreds, coding_solana_shreds) = new_rand_shreds(
                 &mut rng,
                 next_shred_index,

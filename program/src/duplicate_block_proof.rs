@@ -479,11 +479,11 @@ mod tests {
 
     #[test]
     fn test_legacy_shreds_invalid() {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let leader = Arc::new(Keypair::new());
         let leader_pubkey = leader.pubkey();
         let shredder = Shredder::new(SLOT, PARENT_SLOT, REFERENCE_TICK, VERSION).unwrap();
-        let next_shred_index = rng.gen_range(0..32_000);
+        let next_shred_index = rng.random_range(0..32_000);
         let legacy_data_shred =
             new_rand_data_shred(&mut rng, next_shred_index, &shredder, &leader, false, false);
         let legacy_coding_shred =
@@ -521,13 +521,13 @@ mod tests {
 
     #[test]
     fn test_slot_invalid() {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let leader = Arc::new(Keypair::new());
         let leader_pubkey = leader.pubkey();
         let shredder_slot = Shredder::new(SLOT, PARENT_SLOT, REFERENCE_TICK, VERSION).unwrap();
         let shredder_bad_slot =
             Shredder::new(SLOT + 1, PARENT_SLOT, REFERENCE_TICK, VERSION).unwrap();
-        let next_shred_index = rng.gen_range(0..32_000);
+        let next_shred_index = rng.random_range(0..32_000);
         let data_shred = new_rand_data_shred(
             &mut rng,
             next_shred_index,
@@ -584,11 +584,11 @@ mod tests {
 
     #[test]
     fn test_payload_proof_valid() {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let leader = Arc::new(Keypair::new());
         let leader_pubkey = leader.pubkey();
         let shredder = Shredder::new(SLOT, PARENT_SLOT, REFERENCE_TICK, VERSION).unwrap();
-        let next_shred_index = rng.gen_range(0..32_000);
+        let next_shred_index = rng.random_range(0..32_000);
         let shred1 =
             new_rand_data_shred(&mut rng, next_shred_index, &shredder, &leader, true, true);
         let shred2 =
@@ -604,11 +604,11 @@ mod tests {
 
     #[test]
     fn test_payload_proof_invalid() {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let leader = Arc::new(Keypair::new());
         let leader_pubkey = leader.pubkey();
         let shredder = Shredder::new(SLOT, PARENT_SLOT, REFERENCE_TICK, VERSION).unwrap();
-        let next_shred_index = rng.gen_range(0..32_000);
+        let next_shred_index = rng.random_range(0..32_000);
         let data_shred =
             new_rand_data_shred(&mut rng, next_shred_index, &shredder, &leader, true, true);
         let coding_shreds =
@@ -636,11 +636,11 @@ mod tests {
 
     #[test]
     fn test_merkle_root_proof_valid() {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let leader = Arc::new(Keypair::new());
         let leader_pubkey = leader.pubkey();
         let shredder = Shredder::new(SLOT, PARENT_SLOT, REFERENCE_TICK, VERSION).unwrap();
-        let next_shred_index = rng.gen_range(0..32_000);
+        let next_shred_index = rng.random_range(0..32_000);
         let (data_shreds, coding_shreds) = new_rand_shreds(
             &mut rng,
             next_shred_index,
@@ -683,11 +683,11 @@ mod tests {
 
     #[test]
     fn test_merkle_root_proof_invalid() {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let leader = Arc::new(Keypair::new());
         let leader_pubkey = leader.pubkey();
         let shredder = Shredder::new(SLOT, PARENT_SLOT, REFERENCE_TICK, VERSION).unwrap();
-        let next_shred_index = rng.gen_range(0..32_000);
+        let next_shred_index = rng.random_range(0..32_000);
         let (data_shreds, coding_shreds) = new_rand_shreds(
             &mut rng,
             next_shred_index,
@@ -734,11 +734,11 @@ mod tests {
 
     #[test]
     fn test_last_index_conflict_valid() {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let leader = Arc::new(Keypair::new());
         let leader_pubkey = leader.pubkey();
         let shredder = Shredder::new(SLOT, PARENT_SLOT, REFERENCE_TICK, VERSION).unwrap();
-        let next_shred_index = rng.gen_range(0..32_000);
+        let next_shred_index = rng.random_range(0..32_000);
         let test_cases = vec![
             (
                 new_rand_data_shred(&mut rng, next_shred_index, &shredder, &leader, true, true),
@@ -779,11 +779,11 @@ mod tests {
 
     #[test]
     fn test_last_index_conflict_invalid() {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let leader = Arc::new(Keypair::new());
         let leader_pubkey = leader.pubkey();
         let shredder = Shredder::new(SLOT, PARENT_SLOT, REFERENCE_TICK, VERSION).unwrap();
-        let next_shred_index = rng.gen_range(0..32_000);
+        let next_shred_index = rng.random_range(0..32_000);
         let test_cases = vec![
             (
                 new_rand_data_shred(&mut rng, next_shred_index, &shredder, &leader, true, false),
@@ -847,11 +847,11 @@ mod tests {
 
     #[test]
     fn test_erasure_meta_conflict_valid() {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let leader = Arc::new(Keypair::new());
         let leader_pubkey = leader.pubkey();
         let shredder = Shredder::new(SLOT, PARENT_SLOT, REFERENCE_TICK, VERSION).unwrap();
-        let next_shred_index = rng.gen_range(0..32_000);
+        let next_shred_index = rng.random_range(0..32_000);
         let coding_shreds =
             new_rand_coding_shreds(&mut rng, next_shred_index, 10, &shredder, &leader, true);
         let coding_shreds_bigger =
@@ -877,11 +877,11 @@ mod tests {
 
     #[test]
     fn test_erasure_meta_conflict_invalid() {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let leader = Arc::new(Keypair::new());
         let leader_pubkey = leader.pubkey();
         let shredder = Shredder::new(SLOT, PARENT_SLOT, REFERENCE_TICK, VERSION).unwrap();
-        let next_shred_index = rng.gen_range(0..32_000);
+        let next_shred_index = rng.random_range(0..32_000);
         let coding_shreds =
             new_rand_coding_shreds(&mut rng, next_shred_index, 10, &shredder, &leader, true);
         let coding_shreds_different_fec = new_rand_coding_shreds(
@@ -940,11 +940,11 @@ mod tests {
 
     #[test]
     fn test_shred_version_invalid() {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let leader = Arc::new(Keypair::new());
         let leader_pubkey = leader.pubkey();
         let shredder = Shredder::new(SLOT, PARENT_SLOT, REFERENCE_TICK, VERSION).unwrap();
-        let next_shred_index = rng.gen_range(0..32_000);
+        let next_shred_index = rng.random_range(0..32_000);
         let (data_shreds, coding_shreds) = new_rand_shreds(
             &mut rng,
             next_shred_index,
@@ -997,11 +997,11 @@ mod tests {
         const DATA_SHRED_OFFSET: usize = 1139;
         const CODING_SHRED_OFFSET: usize = 1164;
 
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let leader = Arc::new(Keypair::new());
         let leader_pubkey = leader.pubkey();
         let shredder = Shredder::new(SLOT, PARENT_SLOT, REFERENCE_TICK, VERSION).unwrap();
-        let next_shred_index = rng.gen_range(0..32_000);
+        let next_shred_index = rng.random_range(0..32_000);
         let data_shred =
             new_rand_data_shred(&mut rng, next_shred_index, &shredder, &leader, true, true);
         let coding_shred =
@@ -1048,11 +1048,11 @@ mod tests {
 
     #[test]
     fn test_overlapping_erasure_meta_proof_valid() {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let leader = Arc::new(Keypair::new());
         let leader_pubkey = leader.pubkey();
         let shredder = Shredder::new(SLOT, PARENT_SLOT, REFERENCE_TICK, VERSION).unwrap();
-        let next_shred_index = rng.gen_range(0..32_000);
+        let next_shred_index = rng.random_range(0..32_000);
         let coding_shreds =
             new_rand_coding_shreds(&mut rng, next_shred_index, 10, &shredder, &leader, true);
         let (data_shred_next, coding_shred_next) = new_rand_shreds(
@@ -1092,11 +1092,11 @@ mod tests {
 
     #[test]
     fn test_overlapping_erasure_meta_proof_invalid() {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let leader = Arc::new(Keypair::new());
         let leader_pubkey = leader.pubkey();
         let shredder = Shredder::new(SLOT, PARENT_SLOT, REFERENCE_TICK, VERSION).unwrap();
-        let next_shred_index = rng.gen_range(0..32_000);
+        let next_shred_index = rng.random_range(0..32_000);
         let (data_shred, coding_shred) = new_rand_shreds(
             &mut rng,
             next_shred_index,
@@ -1161,11 +1161,11 @@ mod tests {
 
     #[test]
     fn test_sigverify() {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let leader = Arc::new(Keypair::new());
         let leader_pubkey = leader.pubkey();
         let shredder = Shredder::new(SLOT, PARENT_SLOT, REFERENCE_TICK, VERSION).unwrap();
-        let next_shred_index = rng.gen_range(0..32_000);
+        let next_shred_index = rng.random_range(0..32_000);
         let shred1 =
             new_rand_data_shred(&mut rng, next_shred_index, &shredder, &leader, true, true);
         let shred2 =

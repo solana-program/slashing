@@ -187,7 +187,7 @@ pub(crate) fn new_rand_shreds<R: Rng>(
         let tx = system_transaction::transfer(
             &Keypair::new(),       // from
             &Pubkey::new_unique(), // to
-            rng.gen(),             // lamports
+            rng.random(),          // lamports
             Hash::new_unique(),    // recent blockhash
         );
         Entry::new(
@@ -203,7 +203,7 @@ pub(crate) fn new_rand_shreds<R: Rng>(
         &entries,
         is_last_in_slot,
         // chained_merkle_root
-        Some(Hash::new_from_array(rng.gen())),
+        Some(Hash::new_from_array(rng.random())),
         next_shred_index,
         next_code_index, // next_code_index
         true,            // merkle_variant
@@ -220,11 +220,11 @@ async fn valid_proof_data() {
     let authority = Keypair::new();
     let account = Keypair::new();
 
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let leader = Arc::new(Keypair::new());
     let (slot, parent_slot, reference_tick, version) = (SLOT, 53084023, 0, 0);
     let shredder = Shredder::new(slot, parent_slot, reference_tick, version).unwrap();
-    let next_shred_index = rng.gen_range(0..32_000);
+    let next_shred_index = rng.random_range(0..32_000);
     let shred1 = new_rand_data_shred(&mut rng, next_shred_index, &shredder, &leader, true);
     let shred2 = new_rand_data_shred(&mut rng, next_shred_index, &shredder, &leader, true);
 
@@ -264,11 +264,11 @@ async fn valid_proof_coding() {
     let authority = Keypair::new();
     let account = Keypair::new();
 
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let leader = Arc::new(Keypair::new());
     let (slot, parent_slot, reference_tick, version) = (SLOT, 53084023, 0, 0);
     let shredder = Shredder::new(slot, parent_slot, reference_tick, version).unwrap();
-    let next_shred_index = rng.gen_range(0..32_000);
+    let next_shred_index = rng.random_range(0..32_000);
     let shred1 =
         new_rand_coding_shreds(&mut rng, next_shred_index, 10, &shredder, &leader)[0].clone();
     let shred2 =
@@ -310,11 +310,11 @@ async fn invalid_proof_data() {
     let authority = Keypair::new();
     let account = Keypair::new();
 
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let leader = Arc::new(Keypair::new());
     let (slot, parent_slot, reference_tick, version) = (SLOT, 53084023, 0, 0);
     let shredder = Shredder::new(slot, parent_slot, reference_tick, version).unwrap();
-    let next_shred_index = rng.gen_range(0..32_000);
+    let next_shred_index = rng.random_range(0..32_000);
     let shred1 = new_rand_data_shred(&mut rng, next_shred_index, &shredder, &leader, true);
     let shred2 = shred1.clone();
 
@@ -354,11 +354,11 @@ async fn invalid_proof_coding() {
     let authority = Keypair::new();
     let account = Keypair::new();
 
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let leader = Arc::new(Keypair::new());
     let (slot, parent_slot, reference_tick, version) = (SLOT, 53084023, 0, 0);
     let shredder = Shredder::new(slot, parent_slot, reference_tick, version).unwrap();
-    let next_shred_index = rng.gen_range(0..32_000);
+    let next_shred_index = rng.random_range(0..32_000);
     let coding_shreds = new_rand_coding_shreds(&mut rng, next_shred_index, 10, &shredder, &leader);
     let shred1 = coding_shreds[0].clone();
     let shred2 = coding_shreds[1].clone();
@@ -403,11 +403,11 @@ async fn missing_sigverify() {
     let authority = Keypair::new();
     let account = Keypair::new();
 
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let leader = Arc::new(Keypair::new());
     let (slot, parent_slot, reference_tick, version) = (SLOT, 53084023, 0, 0);
     let shredder = Shredder::new(slot, parent_slot, reference_tick, version).unwrap();
-    let next_shred_index = rng.gen_range(0..32_000);
+    let next_shred_index = rng.random_range(0..32_000);
     let shred1 =
         new_rand_coding_shreds(&mut rng, next_shred_index, 10, &shredder, &leader)[0].clone();
     let shred2 =
@@ -478,11 +478,11 @@ async fn improper_sigverify() {
     let authority = Keypair::new();
     let account = Keypair::new();
 
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let leader = Arc::new(Keypair::new());
     let (slot, parent_slot, reference_tick, version) = (SLOT, 53084023, 0, 0);
     let shredder = Shredder::new(slot, parent_slot, reference_tick, version).unwrap();
-    let next_shred_index = rng.gen_range(0..32_000);
+    let next_shred_index = rng.random_range(0..32_000);
     let shred1 =
         new_rand_coding_shreds(&mut rng, next_shred_index, 10, &shredder, &leader)[0].clone();
     let shred2 =
