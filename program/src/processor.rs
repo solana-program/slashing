@@ -113,10 +113,10 @@ mod tests {
     }
 
     fn generate_proof_data(leader: Arc<Keypair>) -> (DuplicateBlockProofInstructionData, Vec<u8>) {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let (slot, parent_slot, reference_tick, version) = (SLOT, SLOT - 1, 0, 0);
         let shredder = Shredder::new(slot, parent_slot, reference_tick, version).unwrap();
-        let next_shred_index = rng.gen_range(0..32_000);
+        let next_shred_index = rng.random_range(0..32_000);
         let shred1 =
             new_rand_data_shred(&mut rng, next_shred_index, &shredder, &leader, true, true);
         let shred2 =
