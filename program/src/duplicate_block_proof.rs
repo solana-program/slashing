@@ -76,7 +76,7 @@ impl<'a> DuplicateBlockProofContext<'a> {
 }
 
 /// Proof of a duplicate block violation
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub struct DuplicateBlockProofData<'a> {
     /// Shred signed by a leader
     pub shred1: &'a [u8],
@@ -87,39 +87,8 @@ pub struct DuplicateBlockProofData<'a> {
 impl<'a> DuplicateBlockProofData<'a> {
     const LENGTH_SIZE: usize = std::mem::size_of::<PodU32>();
 
-    /// Packs proof data to write in account for
-    /// `SlashingInstruction::DuplicateBlockProof`
-    pub fn pack(self) -> Vec<u8> {
-        let mut buf = vec![];
-        buf.extend_from_slice(&(self.shred1.len() as u32).to_le_bytes());
-        buf.extend_from_slice(self.shred1);
-        buf.extend_from_slice(&(self.shred2.len() as u32).to_le_bytes());
-        buf.extend_from_slice(self.shred2);
-        buf
-    }
-
-    /// Given the maximum size of a shred as `shred_size` this returns
-    /// the maximum size of the account needed to store a
-    /// `DuplicateBlockProofData`
-    pub const fn size_of(shred_size: usize) -> usize {
-        2usize
-            .wrapping_mul(shred_size)
-            .saturating_add(2 * Self::LENGTH_SIZE)
-    }
-}
-
-impl<'a> SlashingProofData<'a> for DuplicateBlockProofData<'a> {
-    const PROOF_TYPE: ProofType = ProofType::DuplicateBlockProof;
-    type Context = DuplicateBlockProofContext<'a>;
-
-    fn unpack<'b>(
-        proof_account_data: &'a [u8],
-        instruction_data: &'a [u8],
-        account_info_iter: &'a mut Iter<'_, AccountInfo<'b>>,
-    ) -> Result<(Self, Self::Context), SlashingError>
-    where
-        Self: Sized,
-    {
+    /// Unpacks a proof account into a `DuplicateBlockProofData`
+    pub fn unpack_proof(proof_account_data: &'a [u8]) -> Result<Self, SlashingError> {
         if proof_account_data.len() < Self::LENGTH_SIZE {
             return Err(SlashingError::ProofBufferTooSmall);
         }
@@ -144,17 +113,62 @@ impl<'a> SlashingProofData<'a> for DuplicateBlockProofData<'a> {
         if shred2.len() < shred2_length {
             return Err(SlashingError::ProofBufferTooSmall);
         }
+        let (shred2, _) = shred2.split_at(shred2_length);
 
+        Ok(Self { shred1, shred2 })
+    }
+
+    /// Given the maximum size of a shred as `shred_size` this returns
+    /// the maximum size of the account needed to store a
+    /// `DuplicateBlockProofData`
+    pub const fn size_of(shred_size: usize) -> usize {
+        2usize
+            .wrapping_mul(shred_size)
+            .saturating_add(2 * Self::LENGTH_SIZE)
+    }
+}
+
+impl<'a> SlashingProofData<'a> for DuplicateBlockProofData<'a> {
+    const PROOF_TYPE: ProofType = ProofType::DuplicateBlockProof;
+    type Context = DuplicateBlockProofContext<'a>;
+
+    /// Gives the size of the current proof
+    fn size(&self) -> usize {
+        self.shred1
+            .len()
+            .saturating_add(self.shred2.len())
+            .saturating_add(2 * Self::LENGTH_SIZE)
+    }
+
+    /// Packs proof data to write in account for
+    /// `SlashingInstruction::DuplicateBlockProof`
+    fn pack_proof(self) -> Vec<u8> {
+        let mut buf = vec![];
+        buf.extend_from_slice(&(self.shred1.len() as u32).to_le_bytes());
+        buf.extend_from_slice(self.shred1);
+        buf.extend_from_slice(&(self.shred2.len() as u32).to_le_bytes());
+        buf.extend_from_slice(self.shred2);
+        buf
+    }
+
+    fn unpack_proof_and_context<'b>(
+        proof_account_data: &'a [u8],
+        instruction_data: &'a [u8],
+        account_info_iter: &'a mut Iter<'_, AccountInfo<'b>>,
+    ) -> Result<(Self, Self::Context), SlashingError>
+    where
+        Self: Sized,
+    {
         let instructions_sysvar = next_account_info(account_info_iter)
             .map_err(|_| SlashingError::MissingInstructionsSysvar)?;
         let context =
             DuplicateBlockProofContext::unpack_context(instruction_data, instructions_sysvar)?;
 
-        Ok((Self { shred1, shred2 }, context))
+        Ok((Self::unpack_proof(proof_account_data)?, context))
     }
 
     fn verify_proof(
-        self,
+        &self,
         context: Self::Context,
         slot: Slot,
         node_pubkey: &Pubkey,
@@ -431,11 +445,13 @@ mod tests {
     #[test]
     fn test_unpack_context() {
         let node_pubkey = Pubkey::new_unique();
+        let destination = Pubkey::new_unique();
         let slot = 100;
         let instruction_data = DuplicateBlockProofInstructionData {
             slot: PodU64::from(slot),
             offset: PodU64::from(0),
             node_pubkey,
+            destination,
             shred_1_merkle_root: Hash::new_unique(),
             shred_1_signature: Signature::new_unique().into(),
             shred_2_merkle_root: Hash::new_unique(),

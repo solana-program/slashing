@@ -9,6 +9,10 @@ use {
 /// Errors that may be returned by the program.
 #[derive(Clone, Copy, Debug, Eq, Error, FromPrimitive, PartialEq)]
 pub enum SlashingError {
+    /// Violation has already been reported
+    #[error("Duplicate report")]
+    DuplicateReport,
+
     /// Violation is too old for statue of limitations
     #[error("Exceeds statue of limitations")]
     ExceedsStatueOfLimitations,
@@ -37,6 +41,10 @@ pub enum SlashingError {
     #[error("Invalid last index conflict")]
     InvalidLastIndexConflict,
 
+    /// Invalid violation report account
+    #[error("Invalid violation report account")]
+    InvalidViolationReportAcccount,
+
     /// Invalid shred version on duplicate block proof shreds
     #[error("Invalid shred version")]
     InvalidShredVersion,
@@ -56,6 +64,10 @@ pub enum SlashingError {
     /// Missing signature verification instruction
     #[error("Signature verification instruction is missing")]
     MissingSignatureVerification,
+
+    /// Missing system program account
+    #[error("System program account is missing")]
+    MissingSystemProgramAccount,
 
     /// Unable to deserialize proof buffer
     #[error("Proof buffer deserialization error")]
