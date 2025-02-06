@@ -72,7 +72,7 @@ pub fn process_instruction(
     match instruction_type {
         SlashingInstruction::DuplicateBlockProof => {
             let data = decode_instruction_data::<DuplicateBlockProofInstructionData>(input)?;
-            let proof_data = &accounts.proof_data()?[data.offset()?..];
+            let proof_data = &accounts.proof_account.try_borrow_data()?[data.offset()?..];
             let violation_report = ViolationReport {
                 reporter: *accounts.reporter(),
                 destination: data.destination,

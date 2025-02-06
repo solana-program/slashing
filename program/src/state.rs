@@ -13,7 +13,6 @@ use {
         sysvar::{self, Sysvar},
     },
     spl_pod::primitives::PodU64,
-    std::cell::Ref,
 };
 
 const PACKET_DATA_SIZE: usize = 1232;
@@ -132,10 +131,6 @@ impl<'a, 'b> SlashingAccounts<'a, 'b> {
             ));
         }
         Ok(res)
-    }
-
-    pub(crate) fn proof_data(&self) -> Result<Ref<&mut [u8]>, ProgramError> {
-        self.proof_account.try_borrow_data()
     }
 
     pub(crate) fn reporter(&self) -> &Pubkey {
