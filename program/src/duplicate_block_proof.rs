@@ -121,9 +121,9 @@ impl<'a> DuplicateBlockProofData<'a> {
     /// Given the maximum size of a shred as `shred_size` this returns
     /// the maximum size of the account needed to store a
     /// `DuplicateBlockProofData`
-    pub const fn size_of(shred_size: usize) -> usize {
+    pub const fn size(shred_size: usize) -> usize {
         2usize
-            .wrapping_mul(shred_size)
+            .saturating_mul(shred_size)
             .saturating_add(2 * Self::LENGTH_SIZE)
     }
 }
@@ -132,8 +132,8 @@ impl<'a> SlashingProofData<'a> for DuplicateBlockProofData<'a> {
     const PROOF_TYPE: ProofType = ProofType::DuplicateBlockProof;
     type Context = DuplicateBlockProofContext<'a>;
 
-    /// Gives the size of the current proof
-    fn size(&self) -> usize {
+    /// Gives the serialized size of the current proof
+    fn packed_len(&self) -> usize {
         self.shred1
             .len()
             .saturating_add(self.shred2.len())
