@@ -157,12 +157,11 @@ impl<'a, 'b> SlashingAccounts<'a, 'b> {
     where
         T: SlashingProofData<'a>,
     {
-        let mut violation_report = vec![];
-        violation_report.extend_from_slice(bytemuck::bytes_of(&report));
-        violation_report.extend_from_slice(&T::pack_proof(proof));
-        self.violation_pda_account
-            .try_borrow_mut_data()?
-            .copy_from_slice(&violation_report);
+        self.violation_pda_account.try_borrow_mut_data()?
+            [0..std::mem::size_of::<ViolationReport>()]
+            .copy_from_slice(bytemuck::bytes_of(&report));
+        self.violation_pda_account.try_borrow_mut_data()?[std::mem::size_of::<ViolationReport>()..]
+            .copy_from_slice(&T::pack_proof(proof));
         Ok(())
     }
 }
@@ -194,7 +193,7 @@ pub struct ViolationReport {
 ///
 /// Returns a boolean specifying if this was the first report of this
 /// violation
-pub(crate) fn store_incident<'a, 'b, T>(
+pub(crate) fn store_violation_report<'a, 'b, T>(
     slot: Slot,
     report: ViolationReport,
     accounts: &SlashingAccounts<'a, 'b>,
@@ -203,7 +202,7 @@ pub(crate) fn store_incident<'a, 'b, T>(
 where
     T: SlashingProofData<'a>,
 {
-    let pubkey_seed = report.pubkey.to_bytes();
+    let pubkey_seed = report.pubkey.as_ref();
     let slot_seed = slot.to_le_bytes();
     let violation_seed = [report.violation_type];
     let mut seeds: Vec<&[u8]> = vec![&pubkey_seed, &slot_seed, &violation_seed];

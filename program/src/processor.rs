@@ -9,7 +9,7 @@ use {
             SlashingInstruction,
         },
         state::{
-            store_incident, PodEpoch, ProofType, SlashingAccounts, SlashingProofData,
+            store_violation_report, PodEpoch, ProofType, SlashingAccounts, SlashingProofData,
             ViolationReport,
         },
     },
@@ -48,7 +48,7 @@ where
 
     SlashingProofData::verify_proof(&proof_data, context, slot, &report.pubkey)?;
 
-    if !store_incident(slot, report, accounts, proof_data)? {
+    if !store_violation_report(slot, report, accounts, proof_data)? {
         msg!("{} violation verified in slot {} however the violation has already been reported");
         return Err(SlashingError::DuplicateReport.into());
     }

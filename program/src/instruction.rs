@@ -130,7 +130,7 @@ pub fn duplicate_block_proof(
 ) -> Instruction {
     let (pda, _) = Pubkey::find_program_address(
         &[
-            &instruction_data.node_pubkey.to_bytes(),
+            instruction_data.node_pubkey.as_ref(),
             &u64::from(instruction_data.slot).to_le_bytes(),
             &[ProofType::DuplicateBlockProof.into()],
         ],
