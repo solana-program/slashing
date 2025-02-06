@@ -31,8 +31,8 @@ pub enum SlashingInstruction {
     ///    data.
     /// 1. `[WRITE]` Reporter who will pay to store the violation report
     /// 2. `[WRITE]` PDA to store the violation report
-    /// 3. `[]` System program
-    /// 4. `[]` Instructions sysvar
+    /// 3. `[]` Instructions sysvar
+    /// 4. `[]` System program
     ///
     /// We expect the proof account to be properly sized as to hold a duplicate
     /// block proof. See [`ProofType`] for sizing requirements.
@@ -141,8 +141,8 @@ pub fn duplicate_block_proof(
         AccountMeta::new_readonly(*proof_account, false),
         AccountMeta::new(*reporter, false),
         AccountMeta::new(pda, false),
-        AccountMeta::new_readonly(system_program::id(), false),
         AccountMeta::new_readonly(sysvar::instructions::id(), false),
+        AccountMeta::new_readonly(system_program::id(), false),
     ];
 
     encode_instruction(

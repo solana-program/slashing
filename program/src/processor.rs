@@ -21,7 +21,6 @@ use {
         pubkey::Pubkey,
         sysvar::{clock::Clock, epoch_schedule::EpochSchedule, Sysvar},
     },
-    std::slice::Iter,
 };
 
 fn verify_proof_data<'a, 'b, T>(
@@ -29,7 +28,6 @@ fn verify_proof_data<'a, 'b, T>(
     accounts: &SlashingAccounts<'a, 'b>,
     proof_data: &'a [u8],
     instruction_data: &'a [u8],
-    accounts_info_iter: &'a mut Iter<'_, AccountInfo<'b>>,
 ) -> ProgramResult
 where
     T: SlashingProofData<'a>,
@@ -46,7 +44,7 @@ where
     }
 
     let (proof_data, context) =
-        T::unpack_proof_and_context(proof_data, instruction_data, accounts_info_iter)?;
+        T::unpack_proof_and_context(proof_data, instruction_data, accounts)?;
 
     SlashingProofData::verify_proof(&proof_data, context, slot, &report.pubkey)?;
 
@@ -89,7 +87,6 @@ pub fn process_instruction(
                 &accounts,
                 proof_data,
                 input,
-                account_info_iter,
             )?;
             Ok(())
         }
@@ -254,6 +251,7 @@ mod tests {
             reporter_account: &reporter_info,
             violation_pda_account: &violation_pda_info,
             system_program_account: &reporter_info,
+            instructions_sysvar: &instructions_sysvar_account,
         };
 
         let report = ViolationReport {
@@ -271,7 +269,6 @@ mod tests {
             &accounts,
             &proof_data,
             &instructions[1].data,
-            &mut [instructions_sysvar_account].iter(),
         )
     }
 }
