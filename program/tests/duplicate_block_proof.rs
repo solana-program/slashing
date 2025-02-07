@@ -30,7 +30,9 @@ use {
         duplicate_block_proof::DuplicateBlockProofData,
         error::SlashingError,
         id,
-        instruction::{duplicate_block_proof_with_sigverify, DuplicateBlockProofInstructionData},
+        instruction::{
+            duplicate_block_proof_with_sigverify_and_prefund, DuplicateBlockProofInstructionData,
+        },
         processor::process_instruction,
         state::{ProofType, SlashingProofData, ViolationReport},
     },
@@ -130,7 +132,7 @@ fn slashing_instructions(
     node_pubkey: Pubkey,
     shred1: &Shred,
     shred2: &Shred,
-) -> [Instruction; 2] {
+) -> [Instruction; 3] {
     let instruction_data = DuplicateBlockProofInstructionData {
         offset: PodU64::from(RecordData::WRITABLE_START_INDEX as u64),
         slot: PodU64::from(slot),
@@ -141,7 +143,12 @@ fn slashing_instructions(
         shred_2_merkle_root: shred2.merkle_root().unwrap(),
         shred_2_signature: (*shred2.signature()).into(),
     };
-    duplicate_block_proof_with_sigverify(reporter, proof_account, &instruction_data)
+    duplicate_block_proof_with_sigverify_and_prefund(
+        reporter,
+        proof_account,
+        &instruction_data,
+        &Rent::default(),
+    )
 }
 
 pub fn new_rand_data_shred<R: Rng>(
@@ -407,7 +414,7 @@ async fn invalid_proof_data() {
 
     let authority = Keypair::new();
     let account = Keypair::new();
-    let reporter = Pubkey::new_unique();
+    let reporter = context.payer.pubkey();
     let destination = Pubkey::new_unique();
 
     let mut rng = rand::rng();
@@ -447,7 +454,7 @@ async fn invalid_proof_data() {
         .await
         .unwrap_err()
         .unwrap();
-    let TransactionError::InstructionError(1, InstructionError::Custom(code)) = err else {
+    let TransactionError::InstructionError(2, InstructionError::Custom(code)) = err else {
         panic!("Invalid error {err:?}");
     };
     let err: SlashingError = SlashingError::decode_custom_error_to_enum(code).unwrap();
@@ -461,7 +468,7 @@ async fn invalid_proof_coding() {
 
     let authority = Keypair::new();
     let account = Keypair::new();
-    let reporter = Pubkey::new_unique();
+    let reporter = context.payer.pubkey();
     let destination = Pubkey::new_unique();
 
     let mut rng = rand::rng();
@@ -506,7 +513,7 @@ async fn invalid_proof_coding() {
         .await
         .unwrap_err()
         .unwrap();
-    let TransactionError::InstructionError(1, InstructionError::Custom(code)) = err else {
+    let TransactionError::InstructionError(2, InstructionError::Custom(code)) = err else {
         panic!("Invalid error {err:?}");
     };
     let err: SlashingError = SlashingError::decode_custom_error_to_enum(code).unwrap();
@@ -520,7 +527,7 @@ async fn missing_sigverify() {
 
     let authority = Keypair::new();
     let account = Keypair::new();
-    let reporter = Pubkey::new_unique();
+    let reporter = context.payer.pubkey();
     let destination = Pubkey::new_unique();
 
     let mut rng = rand::rng();
@@ -550,7 +557,7 @@ async fn missing_sigverify() {
         leader.pubkey(),
         &shred1,
         &shred2,
-    )[1]
+    )[2]
     .clone()];
 
     let transaction = Transaction::new_signed_with_payer(
@@ -581,7 +588,7 @@ async fn missing_sigverify() {
         &shred1,
         &shred2,
     );
-    instructions[0].data[0] = 1;
+    instructions[1].data[0] = 1;
 
     let transaction = Transaction::new_signed_with_payer(
         &instructions,
@@ -595,7 +602,7 @@ async fn missing_sigverify() {
         .await
         .unwrap_err()
         .unwrap();
-    let TransactionError::InstructionError(1, InstructionError::Custom(code)) = err else {
+    let TransactionError::InstructionError(2, InstructionError::Custom(code)) = err else {
         panic!("Invalid error {err:?}");
     };
     let err: SlashingError = SlashingError::decode_custom_error_to_enum(code).unwrap();
@@ -609,7 +616,7 @@ async fn improper_sigverify() {
 
     let authority = Keypair::new();
     let account = Keypair::new();
-    let reporter = Pubkey::new_unique();
+    let reporter = context.payer.pubkey();
     let destination = Pubkey::new_unique();
 
     let mut rng = rand::rng();
@@ -645,8 +652,8 @@ async fn improper_sigverify() {
     );
     const MESSAGE_START: usize = 1 + 8 + 8 + 32 + 32;
     const SIGNATURE_START: usize = MESSAGE_START + HASH_BYTES;
-    instructions[1].data[MESSAGE_START..SIGNATURE_START].copy_from_slice(&message);
-    instructions[1].data[SIGNATURE_START..SIGNATURE_START + SIGNATURE_BYTES]
+    instructions[2].data[MESSAGE_START..SIGNATURE_START].copy_from_slice(&message);
+    instructions[2].data[SIGNATURE_START..SIGNATURE_START + SIGNATURE_BYTES]
         .copy_from_slice(&signature);
 
     let transaction = Transaction::new_signed_with_payer(
@@ -661,7 +668,7 @@ async fn improper_sigverify() {
         .await
         .unwrap_err()
         .unwrap();
-    let TransactionError::InstructionError(1, InstructionError::Custom(code)) = err else {
+    let TransactionError::InstructionError(2, InstructionError::Custom(code)) = err else {
         panic!("Invalid error {err:?}");
     };
     let err: SlashingError = SlashingError::decode_custom_error_to_enum(code).unwrap();
@@ -677,12 +684,12 @@ async fn improper_sigverify() {
         &shred1,
         &shred2,
     );
-    instructions[0].data[SIGNATURE_OFFSETS_START..SIGNATURE_OFFSETS_START + 2]
+    instructions[1].data[SIGNATURE_OFFSETS_START..SIGNATURE_OFFSETS_START + 2]
         .copy_from_slice(&100u16.to_le_bytes());
-    instructions[0].data[SIGNATURE_OFFSETS_START + 2..SIGNATURE_OFFSETS_START + 4]
-        .copy_from_slice(&0u16.to_le_bytes());
-    instructions[0].data.extend_from_slice(&[0; 200]);
-    instructions[0].data[100..100 + SIGNATURE_BYTES]
+    instructions[1].data[SIGNATURE_OFFSETS_START + 2..SIGNATURE_OFFSETS_START + 4]
+        .copy_from_slice(&1u16.to_le_bytes());
+    instructions[1].data.extend_from_slice(&[0; 200]);
+    instructions[1].data[100..100 + SIGNATURE_BYTES]
         .copy_from_slice(&<[u8; SIGNATURE_BYTES]>::from(*shred1.signature()));
     let transaction = Transaction::new_signed_with_payer(
         &instructions,
@@ -696,7 +703,7 @@ async fn improper_sigverify() {
         .await
         .unwrap_err()
         .unwrap();
-    let TransactionError::InstructionError(1, InstructionError::Custom(code)) = err else {
+    let TransactionError::InstructionError(2, InstructionError::Custom(code)) = err else {
         panic!("Invalid error {err:?}");
     };
     let err: SlashingError = SlashingError::decode_custom_error_to_enum(code).unwrap();
@@ -791,10 +798,28 @@ async fn double_report() {
             .unwrap();
     assert_eq!(duplicate_proof, proof);
 
-    // Report the violation again but use a different reporter
+    // Setup the new reporter
+    let new_reporter = Keypair::new();
+    let transaction = Transaction::new_signed_with_payer(
+        &[system_instruction::transfer(
+            &context.payer.pubkey(),
+            &new_reporter.pubkey(),
+            1_000_000_000,
+        )],
+        Some(&context.payer.pubkey()),
+        &[&context.payer],
+        context.last_blockhash,
+    );
+    context
+        .banks_client
+        .process_transaction(transaction)
+        .await
+        .unwrap();
+
+    // Report the violation again but use the new reporter
     let transaction = Transaction::new_signed_with_payer(
         &slashing_instructions(
-            &Pubkey::new_unique(),
+            &new_reporter.pubkey(),
             &Pubkey::new_unique(),
             &account.pubkey(),
             slot,
@@ -803,7 +828,7 @@ async fn double_report() {
             &shred2,
         ),
         Some(&context.payer.pubkey()),
-        &[&context.payer],
+        &[&context.payer, &new_reporter],
         context.last_blockhash,
     );
     let err = context
@@ -812,7 +837,7 @@ async fn double_report() {
         .await
         .unwrap_err()
         .unwrap();
-    let TransactionError::InstructionError(1, InstructionError::Custom(code)) = err else {
+    let TransactionError::InstructionError(2, InstructionError::Custom(code)) = err else {
         panic!("Invalid error {err:?}");
     };
     let err: SlashingError = SlashingError::decode_custom_error_to_enum(code).unwrap();

@@ -98,7 +98,7 @@ mod tests {
         crate::{
             duplicate_block_proof::DuplicateBlockProofData,
             error::SlashingError,
-            id,
+            get_violation_report_address, id,
             instruction::{construct_instructions_and_sysvar, DuplicateBlockProofInstructionData},
             shred::tests::new_rand_data_shred,
             state::{PodEpoch, ProofType, SlashingAccounts, SlashingProofData, ViolationReport},
@@ -209,14 +209,8 @@ mod tests {
             false,
             0,
         );
-        let (pda, _) = Pubkey::find_program_address(
-            &[
-                &leader.pubkey().to_bytes(),
-                &SLOT.to_le_bytes(),
-                &[ProofType::DuplicateBlockProof.into()],
-            ],
-            &id(),
-        );
+        let (pda, _) =
+            get_violation_report_address(&leader.pubkey(), SLOT, ProofType::DuplicateBlockProof);
         let mut pda_lamports = 0;
         let mut pda_data = [1]; // Non zero so we don't attempt to write a report
         let owner = id();
@@ -230,7 +224,7 @@ mod tests {
             false,
             0,
         );
-        let mut reporter_lamports = 10000;
+        let mut reporter_lamports = 10000000;
         let owner = id();
         let reporter = Pubkey::new_unique();
         let reporter_info = AccountInfo::new(
@@ -267,7 +261,7 @@ mod tests {
             report,
             &accounts,
             &proof_data,
-            &instructions[1].data,
+            &instructions[2].data,
         )
     }
 }

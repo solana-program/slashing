@@ -114,7 +114,7 @@ impl<'a> DuplicateBlockProofData<'a> {
     /// Given the maximum size of a shred as `shred_size` this returns
     /// the maximum size of the account needed to store a
     /// `DuplicateBlockProofData`
-    pub const fn size(shred_size: usize) -> usize {
+    pub(crate) const fn size(shred_size: usize) -> usize {
         2usize
             .saturating_mul(shred_size)
             .saturating_add(2 * Self::LENGTH_SIZE)
@@ -464,7 +464,7 @@ mod tests {
             0,
         );
         let context =
-            DuplicateBlockProofContext::unpack_context(&instructions[1].data, &instructions_sysvar)
+            DuplicateBlockProofContext::unpack_context(&instructions[2].data, &instructions_sysvar)
                 .unwrap();
 
         assert_eq!(*context.expected_pubkey, node_pubkey);

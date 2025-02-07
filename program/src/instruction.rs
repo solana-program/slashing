@@ -1,7 +1,13 @@
 //! Program instructions
 
 use {
-    crate::{error::SlashingError, id, sigverify::Ed25519SignatureOffsets, state::ProofType},
+    crate::{
+        duplicate_block_proof::DuplicateBlockProofData,
+        error::SlashingError,
+        get_violation_report_address, id,
+        sigverify::Ed25519SignatureOffsets,
+        state::{ProofType, ViolationReport},
+    },
     bytemuck::{Pod, Zeroable},
     num_enum::{IntoPrimitive, TryFromPrimitive},
     solana_program::{
@@ -9,7 +15,8 @@ use {
         instruction::{AccountMeta, Instruction},
         program_error::ProgramError,
         pubkey::{Pubkey, PUBKEY_BYTES},
-        system_program, sysvar,
+        rent::Rent,
+        system_instruction, system_program, sysvar,
     },
     solana_signature::SIGNATURE_BYTES,
     spl_pod::{
@@ -128,13 +135,10 @@ pub fn duplicate_block_proof(
     proof_account: &Pubkey,
     instruction_data: &DuplicateBlockProofInstructionData,
 ) -> Instruction {
-    let (pda, _) = Pubkey::find_program_address(
-        &[
-            instruction_data.node_pubkey.as_ref(),
-            &u64::from(instruction_data.slot).to_le_bytes(),
-            &[ProofType::DuplicateBlockProof.into()],
-        ],
-        &id(),
+    let (pda, _) = get_violation_report_address(
+        &instruction_data.node_pubkey,
+        u64::from(instruction_data.slot),
+        ProofType::DuplicateBlockProof,
     );
 
     let accounts = vec![
@@ -152,26 +156,29 @@ pub fn duplicate_block_proof(
     )
 }
 
-/// Utility to create instructions for both the signature verification and the
-/// `SlashingInstruction::DuplicateBlockProof` in the expected format.
+/// Utility to create instructions for prefunding the report account, signature
+/// verification and the `SlashingInstruction::DuplicateBlockProof` in the
+/// expected format.
 ///
 /// `sigverify_data` should equal the `(shredx.merkle_root, shredx.signature)`
 /// specified in the proof account
 ///
-/// Returns two instructions, the sigverify and the slashing instruction. These
-/// must be sent consecutively as the first two instructions in a transaction
-/// with the same ordering to function properly.
-pub fn duplicate_block_proof_with_sigverify(
+/// Returns three instructions, the transfer, the sigverify and the slashing
+/// instruction. These must be sent consecutively as the first three
+/// instructions in a transaction with the same ordering to function properly.
+pub fn duplicate_block_proof_with_sigverify_and_prefund(
     reporter: &Pubkey,
     proof_account: &Pubkey,
     instruction_data: &DuplicateBlockProofInstructionData,
-) -> [Instruction; 2] {
+    rent: &Rent,
+) -> [Instruction; 3] {
     let slashing_ix = duplicate_block_proof(reporter, proof_account, instruction_data);
-    let signature_instruction_index = 1;
+
+    let signature_instruction_index = 2;
     let public_key_offset = DuplicateBlockProofInstructionData::NODE_PUBKEY_OFFSET;
-    let public_key_instruction_index = 1;
+    let public_key_instruction_index = 2;
     let message_data_size = HASH_BYTES as u16;
-    let message_instruction_index = 1;
+    let message_instruction_index = 2;
 
     let shred1_sigverify_offset = Ed25519SignatureOffsets {
         signature_offset: DuplicateBlockProofInstructionData::SIGNATURE_1_OFFSET,
@@ -196,13 +203,21 @@ pub fn duplicate_block_proof_with_sigverify(
         shred2_sigverify_offset,
     ]);
 
-    [sigverify_ix, slashing_ix]
+    let (pda, _) = get_violation_report_address(
+        &instruction_data.node_pubkey,
+        u64::from(instruction_data.slot),
+        ProofType::DuplicateBlockProof,
+    );
+    let lamports = rent.minimum_balance(ViolationReport::size::<DuplicateBlockProofData>());
+    let transfer_ix = system_instruction::transfer(reporter, &pda, lamports);
+
+    [transfer_ix, sigverify_ix, slashing_ix]
 }
 
 #[cfg(test)]
 pub(crate) fn construct_instructions_and_sysvar(
     instruction_data: &DuplicateBlockProofInstructionData,
-) -> ([Instruction; 2], Vec<u8>) {
+) -> ([Instruction; 3], Vec<u8>) {
     use solana_sdk::sysvar::instructions::{self, BorrowedAccountMeta, BorrowedInstruction};
 
     fn borrow_account(account: &AccountMeta) -> BorrowedAccountMeta {
@@ -220,16 +235,17 @@ pub(crate) fn construct_instructions_and_sysvar(
         }
     }
 
-    let instructions = duplicate_block_proof_with_sigverify(
+    let instructions = duplicate_block_proof_with_sigverify_and_prefund(
         &Pubkey::new_unique(),
         &Pubkey::new_unique(),
         instruction_data,
+        &Rent::default(),
     );
     let borrowed_instructions: Vec<BorrowedInstruction> =
         instructions.iter().map(borrow_instruction).collect();
     let mut instructions_sysvar_data =
         instructions::construct_instructions_data(&borrowed_instructions);
-    instructions::store_current_index(&mut instructions_sysvar_data, 1);
+    instructions::store_current_index(&mut instructions_sysvar_data, 2);
     (instructions, instructions_sysvar_data)
 }
 

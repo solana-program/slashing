@@ -77,6 +77,11 @@ pub enum SlashingError {
     #[error("Proof buffer too small")]
     ProofBufferTooSmall,
 
+    /// Report account is not prefunded with enough lamports to store
+    /// the violation report
+    #[error("Report account is not prefunded with enough lamports")]
+    ReportAccountNotPrefunded,
+
     /// Shred deserialization error
     #[error("Deserialization error")]
     ShredDeserializationError,

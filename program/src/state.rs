@@ -201,6 +201,18 @@ impl ViolationReport {
     pub fn version(data: &[u8]) -> u8 {
         data[0]
     }
+
+    /// Returns the packed length of this violation report plus the packed
+    /// length of `proof`
+    pub fn packed_len<'a, T: SlashingProofData<'a>>(proof: &T) -> usize {
+        std::mem::size_of::<ViolationReport>().saturating_add(proof.packed_len())
+    }
+
+    /// Returns the maximum size of the serialized report plus the maximum size
+    /// of a proof for `T`
+    pub const fn size<'a, T: SlashingProofData<'a>>() -> usize {
+        std::mem::size_of::<ViolationReport>().saturating_add(T::PROOF_TYPE.proof_account_length())
+    }
 }
 
 /// Store a `ProofReport` of a successful proof at a
@@ -241,22 +253,29 @@ where
         return Err(ProgramError::from(SlashingError::DuplicateReport));
     }
 
-    // Create the account via CPI
-    let data_len = std::mem::size_of::<ViolationReport>()
-        .checked_add(proof_data.packed_len())
-        .ok_or(ProgramError::ArithmeticOverflow)?;
+    // Check if the account has been prefunded to store the report
+    let data_len = ViolationReport::packed_len(&proof_data);
     let lamports = Rent::get()?.minimum_balance(data_len);
-    let create_account_ix = system_instruction::create_account(
-        &report.reporter,
-        &pda,
-        lamports,
-        data_len as u64,
-        &id(),
-    );
+    if accounts.violation_pda_account.try_lamports()? < lamports {
+        return Err(ProgramError::from(SlashingError::ReportAccountNotPrefunded));
+    }
+
+    // Allocate enough space for the report
+    let allocate_instruction = system_instruction::allocate(&pda, data_len as u64);
     invoke_signed(
-        &create_account_ix,
+        &allocate_instruction,
         &[
-            accounts.reporter_account.clone(),
+            accounts.violation_pda_account.clone(),
+            accounts.system_program_account.clone(),
+        ],
+        &[&seeds],
+    )?;
+
+    // Assign the slashing program as the owner
+    let assign_instruction = system_instruction::assign(&pda, &id());
+    invoke_signed(
+        &assign_instruction,
+        &[
             accounts.violation_pda_account.clone(),
             accounts.system_program_account.clone(),
         ],
