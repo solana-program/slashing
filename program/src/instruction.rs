@@ -47,7 +47,7 @@ pub enum SlashingInstruction {
     /// [`DuplicateBlockProofData`]
     ///
     /// We also expect that the PDA has already been prefunded with the
-    /// necessary lamports to hold the report. Use [`VioaltionReport::size`]
+    /// necessary lamports to hold the report. Use [`ViolationReport::size`]
     /// for the calculation.
     ///
     /// Data expected by this instruction:

@@ -108,9 +108,7 @@ mod tests {
         solana_sdk::{
             account_info::AccountInfo,
             clock::{Clock, Slot, DEFAULT_SLOTS_PER_EPOCH},
-            entrypoint::ProgramResult,
             epoch_schedule::EpochSchedule,
-            instruction::Instruction,
             program_error::ProgramError,
             pubkey::Pubkey,
             rent::Rent,
@@ -119,16 +117,12 @@ mod tests {
             sysvar::instructions::{self},
         },
         spl_pod::primitives::PodU64,
-        std::{
-            ptr::addr_of_mut,
-            sync::{Arc, RwLock},
-        },
+        std::sync::{Arc, RwLock},
     };
 
     const SLOT: Slot = 53084024;
     // Based on the empircal size of two data shreds
     const SIZE: usize = 2414 + std::mem::size_of::<ViolationReport>();
-    static mut DATA: [u8; SIZE] = [0u8; SIZE];
     lazy_static::lazy_static! {
         static ref CLOCK_SLOT: Arc<RwLock<Slot>> = Arc::new(RwLock::new(SLOT));
     }
@@ -205,19 +199,6 @@ mod tests {
                 }
                 solana_program::entrypoint::SUCCESS
             }
-
-            fn sol_invoke_signed(
-                &self,
-                _instruction: &Instruction,
-                account_infos: &[AccountInfo],
-                _signers_seeds: &[&[&[u8]]],
-            ) -> ProgramResult {
-                // Simulate allocate
-                unsafe {
-                    *account_infos[0].data.borrow_mut() = &mut *addr_of_mut!(DATA);
-                }
-                Ok(())
-            }
         }
 
         solana_sdk::program_stubs::set_syscall_stubs(Box::new(SyscallStubs {}));
@@ -239,7 +220,7 @@ mod tests {
         let (pda, _) =
             get_violation_report_address(&leader.pubkey(), SLOT, ProofType::DuplicateBlockProof);
         let mut pda_lamports = 1_000_000_000;
-        let mut pda_data = []; // Non zero so we don't attempt to write a report
+        let mut pda_data = [0u8; SIZE];
         let owner = id();
         let violation_pda_info = AccountInfo::new(
             &pda,
