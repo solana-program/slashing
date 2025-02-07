@@ -298,16 +298,17 @@ async fn valid_proof_data() {
     let violation_report_size = std::mem::size_of::<ViolationReport>();
     let violation_report: &ViolationReport =
         pod_from_bytes(&report_account.data[0..violation_report_size]).unwrap();
-    assert_eq!(violation_report.reporter, reporter);
-    assert_eq!(violation_report.destination, destination);
-    assert_eq!(u64::from(violation_report.epoch), EPOCH);
-    assert_eq!(violation_report.pubkey, leader.pubkey());
-    assert_eq!(u64::from(violation_report.slot), slot);
-    assert_eq!(
-        ProofType::from(violation_report.violation_type),
-        ProofType::DuplicateBlockProof
-    );
-    assert_eq!(violation_report.proof_account, account.pubkey());
+    let expected_violation_report = ViolationReport {
+        version: ViolationReport::VERSION,
+        reporter,
+        destination,
+        epoch: PodU64::from(EPOCH),
+        pubkey: leader.pubkey(),
+        slot: PodU64::from(slot),
+        violation_type: ProofType::DuplicateBlockProof.into(),
+        proof_account: account.pubkey(),
+    };
+    assert_eq!(*violation_report, expected_violation_report);
 
     // Verify that the proof was also serialized to the account
     let proof =
@@ -389,16 +390,18 @@ async fn valid_proof_coding() {
     let violation_report_size = std::mem::size_of::<ViolationReport>();
     let violation_report: &ViolationReport =
         pod_from_bytes(&report_account.data[0..violation_report_size]).unwrap();
-    assert_eq!(violation_report.reporter, reporter);
-    assert_eq!(violation_report.destination, destination);
-    assert_eq!(u64::from(violation_report.epoch), EPOCH);
-    assert_eq!(violation_report.pubkey, leader.pubkey());
-    assert_eq!(u64::from(violation_report.slot), slot);
-    assert_eq!(
-        ProofType::from(violation_report.violation_type),
-        ProofType::DuplicateBlockProof
-    );
-    assert_eq!(violation_report.proof_account, account.pubkey());
+
+    let expected_violation_report = ViolationReport {
+        version: ViolationReport::VERSION,
+        reporter,
+        destination,
+        epoch: PodU64::from(EPOCH),
+        pubkey: leader.pubkey(),
+        slot: PodU64::from(slot),
+        violation_type: ProofType::DuplicateBlockProof.into(),
+        proof_account: account.pubkey(),
+    };
+    assert_eq!(*violation_report, expected_violation_report);
 
     // Verify that the proof was also serialized to the account
     let proof =
@@ -781,16 +784,18 @@ async fn double_report() {
     let violation_report_size = std::mem::size_of::<ViolationReport>();
     let violation_report: &ViolationReport =
         pod_from_bytes(&report_account.data[0..violation_report_size]).unwrap();
-    assert_eq!(violation_report.reporter, reporter);
-    assert_eq!(violation_report.destination, destination);
-    assert_eq!(u64::from(violation_report.epoch), EPOCH);
-    assert_eq!(violation_report.pubkey, leader.pubkey());
-    assert_eq!(u64::from(violation_report.slot), slot);
-    assert_eq!(
-        ProofType::from(violation_report.violation_type),
-        ProofType::DuplicateBlockProof
-    );
-    assert_eq!(violation_report.proof_account, account.pubkey());
+
+    let expected_violation_report = ViolationReport {
+        version: ViolationReport::VERSION,
+        reporter,
+        destination,
+        epoch: PodU64::from(EPOCH),
+        pubkey: leader.pubkey(),
+        slot: PodU64::from(slot),
+        violation_type: ProofType::DuplicateBlockProof.into(),
+        proof_account: account.pubkey(),
+    };
+    assert_eq!(*violation_report, expected_violation_report);
 
     // Verify that the proof was also serialized to the account
     let proof =
@@ -861,6 +866,6 @@ async fn double_report() {
     let violation_report_size = std::mem::size_of::<ViolationReport>();
     let violation_report: &ViolationReport =
         pod_from_bytes(&report_account.data[0..violation_report_size]).unwrap();
-    assert_eq!(violation_report.reporter, reporter);
-    assert_eq!(violation_report.destination, destination);
+
+    assert_eq!(*violation_report, expected_violation_report);
 }
