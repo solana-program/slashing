@@ -105,7 +105,6 @@ pub trait SlashingProofData<'a> {
 /// Accounts relevant for the slashing program
 pub struct SlashingAccounts<'a, 'b> {
     pub(crate) proof_account: &'a AccountInfo<'b>,
-    pub(crate) reporter_account: &'a AccountInfo<'b>,
     pub(crate) violation_pda_account: &'a AccountInfo<'b>,
     pub(crate) instructions_sysvar: &'a AccountInfo<'b>,
     pub(crate) system_program_account: &'a AccountInfo<'b>,
@@ -118,7 +117,6 @@ impl<'a, 'b> SlashingAccounts<'a, 'b> {
     {
         let res = Self {
             proof_account: next_account_info(account_info_iter)?,
-            reporter_account: next_account_info(account_info_iter)?,
             violation_pda_account: next_account_info(account_info_iter)?,
             instructions_sysvar: next_account_info(account_info_iter)?,
             system_program_account: next_account_info(account_info_iter)?,
@@ -132,10 +130,6 @@ impl<'a, 'b> SlashingAccounts<'a, 'b> {
             ));
         }
         Ok(res)
-    }
-
-    pub(crate) fn reporter(&self) -> &Pubkey {
-        self.reporter_account.key
     }
 
     pub(crate) fn proof_account(&self) -> &Pubkey {

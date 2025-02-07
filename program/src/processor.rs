@@ -72,7 +72,7 @@ pub fn process_instruction(
             let proof_data = &accounts.proof_account.try_borrow_data()?[data.offset()?..];
             let violation_report = ViolationReport {
                 version: ViolationReport::VERSION,
-                reporter: *accounts.reporter(),
+                reporter: data.reporter,
                 destination: data.destination,
                 epoch: PodEpoch::from(Clock::get()?.epoch),
                 pubkey: data.node_pubkey,
@@ -137,6 +137,7 @@ mod tests {
             slot: PodU64::from(slot),
             offset: PodU64::from(0),
             node_pubkey: leader.pubkey(),
+            reporter: Pubkey::new_unique(),
             destination: Pubkey::new_unique(),
             shred_1_merkle_root: shred1.merkle_root().unwrap(),
             shred_2_merkle_root: shred2.merkle_root().unwrap(),
@@ -240,7 +241,6 @@ mod tests {
 
         let accounts = SlashingAccounts {
             proof_account: &reporter_info,
-            reporter_account: &reporter_info,
             violation_pda_account: &violation_pda_info,
             system_program_account: &reporter_info,
             instructions_sysvar: &instructions_sysvar_account,

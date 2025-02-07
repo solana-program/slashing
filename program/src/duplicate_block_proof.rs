@@ -438,12 +438,14 @@ mod tests {
     #[test]
     fn test_unpack_context() {
         let node_pubkey = Pubkey::new_unique();
+        let reporter = Pubkey::new_unique();
         let destination = Pubkey::new_unique();
         let slot = 100;
         let instruction_data = DuplicateBlockProofInstructionData {
             slot: PodU64::from(slot),
             offset: PodU64::from(0),
             node_pubkey,
+            reporter,
             destination,
             shred_1_merkle_root: Hash::new_unique(),
             shred_1_signature: Signature::new_unique().into(),

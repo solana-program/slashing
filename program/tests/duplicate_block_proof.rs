@@ -137,6 +137,7 @@ fn slashing_instructions(
         offset: PodU64::from(RecordData::WRITABLE_START_INDEX as u64),
         slot: PodU64::from(slot),
         node_pubkey,
+        reporter: *reporter,
         destination: *destination,
         shred_1_merkle_root: shred1.merkle_root().unwrap(),
         shred_1_signature: (*shred1.signature()).into(),
@@ -144,7 +145,6 @@ fn slashing_instructions(
         shred_2_signature: (*shred2.signature()).into(),
     };
     duplicate_block_proof_with_sigverify_and_prefund(
-        reporter,
         proof_account,
         &instruction_data,
         &Rent::default(),
@@ -650,7 +650,7 @@ async fn improper_sigverify() {
         &shred1,
         &shred2,
     );
-    const MESSAGE_START: usize = 1 + 8 + 8 + 32 + 32;
+    const MESSAGE_START: usize = DuplicateBlockProofInstructionData::sigverify_data_offset();
     const SIGNATURE_START: usize = MESSAGE_START + HASH_BYTES;
     instructions[2].data[MESSAGE_START..SIGNATURE_START].copy_from_slice(&message);
     instructions[2].data[SIGNATURE_START..SIGNATURE_START + SIGNATURE_BYTES]
