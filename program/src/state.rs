@@ -5,6 +5,7 @@ use {
     solana_program::{
         account_info::{next_account_info, AccountInfo},
         clock::Slot,
+        msg,
         program::invoke_signed,
         program_error::ProgramError,
         pubkey::Pubkey,
@@ -145,8 +146,10 @@ impl<'a, 'b> SlashingAccounts<'a, 'b> {
         self.violation_pda_account.key
     }
 
-    fn violation_account_exists(&self) -> bool {
-        !self.violation_pda_account.data_is_empty() && check_id(self.violation_pda_account.owner)
+    fn violation_account_exists(&self) -> Result<bool, ProgramError> {
+        Ok(!self.violation_pda_account.data_is_empty()
+            && check_id(self.violation_pda_account.owner)
+            && ViolationReport::version(&self.violation_pda_account.try_borrow_data()?) > 0)
     }
 
     fn write_violation_report<T>(
@@ -172,6 +175,8 @@ impl<'a, 'b> SlashingAccounts<'a, 'b> {
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
 pub struct ViolationReport {
+    /// The report format version number
+    pub version: u8,
     /// The first reporter of this violation
     pub reporter: Pubkey,
     /// Account to credit the lamports when this proof report is closed
@@ -188,6 +193,16 @@ pub struct ViolationReport {
     pub proof_account: Pubkey,
 }
 
+impl ViolationReport {
+    /// The current version
+    pub const VERSION: u8 = 1;
+
+    /// Returns the version of the violation account
+    pub fn version(data: &[u8]) -> u8 {
+        data[0]
+    }
+}
+
 /// Store a `ProofReport` of a successful proof at a
 /// PDA derived from the `pubkey`, `slot`, and `T:PROOF_TYPE`.
 ///
@@ -198,7 +213,7 @@ pub(crate) fn store_violation_report<'a, 'b, T>(
     report: ViolationReport,
     accounts: &SlashingAccounts<'a, 'b>,
     proof_data: T,
-) -> Result<bool, ProgramError>
+) -> Result<(), ProgramError>
 where
     T: SlashingProofData<'a>,
 {
@@ -217,8 +232,13 @@ where
     }
 
     // Check if it was already reported
-    if accounts.violation_account_exists() {
-        return Ok(false);
+    if accounts.violation_account_exists()? {
+        msg!(
+            "{} violation verified in slot {} however the violation has already been reported",
+            T::PROOF_TYPE.violation_str(),
+            slot,
+        );
+        return Err(ProgramError::from(SlashingError::DuplicateReport));
     }
 
     // Create the account via CPI
@@ -244,9 +264,7 @@ where
     )?;
 
     // Write the report
-    accounts.write_violation_report(report, proof_data)?;
-
-    Ok(true)
+    accounts.write_violation_report(report, proof_data)
 }
 
 #[cfg(test)]

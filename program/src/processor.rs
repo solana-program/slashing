@@ -48,10 +48,7 @@ where
 
     SlashingProofData::verify_proof(&proof_data, context, slot, &report.pubkey)?;
 
-    if !store_violation_report(slot, report, accounts, proof_data)? {
-        msg!("{} violation verified in slot {} however the violation has already been reported");
-        return Err(SlashingError::DuplicateReport.into());
-    }
+    store_violation_report(slot, report, accounts, proof_data)?;
     msg!(
         "{} violation verified in slot {}. This incident has been recorded",
         T::PROOF_TYPE.violation_str(),
@@ -74,6 +71,7 @@ pub fn process_instruction(
             let data = decode_instruction_data::<DuplicateBlockProofInstructionData>(input)?;
             let proof_data = &accounts.proof_account.try_borrow_data()?[data.offset()?..];
             let violation_report = ViolationReport {
+                version: ViolationReport::VERSION,
                 reporter: *accounts.reporter(),
                 destination: data.destination,
                 epoch: PodEpoch::from(Clock::get()?.epoch),
@@ -255,6 +253,7 @@ mod tests {
         };
 
         let report = ViolationReport {
+            version: ViolationReport::VERSION,
             reporter,
             destination: Pubkey::new_unique(),
             epoch: PodEpoch::from(100),
