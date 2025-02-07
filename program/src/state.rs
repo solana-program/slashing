@@ -167,7 +167,7 @@ impl<'a, 'b> SlashingAccounts<'a, 'b> {
 /// The report account will contain this optionally followed by the
 /// serialized proof
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Pod, Zeroable)]
+#[derive(Copy, Clone, Debug, Pod, Zeroable, PartialEq)]
 pub struct ViolationReport {
     /// The report format version number
     pub version: u8,

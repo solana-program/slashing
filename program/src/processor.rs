@@ -108,18 +108,27 @@ mod tests {
         solana_sdk::{
             account_info::AccountInfo,
             clock::{Clock, Slot, DEFAULT_SLOTS_PER_EPOCH},
+            entrypoint::ProgramResult,
             epoch_schedule::EpochSchedule,
+            instruction::Instruction,
             program_error::ProgramError,
             pubkey::Pubkey,
+            rent::Rent,
             signature::Keypair,
             signer::Signer,
             sysvar::instructions::{self},
         },
         spl_pod::primitives::PodU64,
-        std::sync::{Arc, RwLock},
+        std::{
+            ptr::addr_of_mut,
+            sync::{Arc, RwLock},
+        },
     };
 
     const SLOT: Slot = 53084024;
+    // Based on the empircal size of two data shreds
+    const SIZE: usize = 2414 + std::mem::size_of::<ViolationReport>();
+    static mut DATA: [u8; SIZE] = [0u8; SIZE];
     lazy_static::lazy_static! {
         static ref CLOCK_SLOT: Arc<RwLock<Slot>> = Arc::new(RwLock::new(SLOT));
     }
@@ -154,10 +163,7 @@ mod tests {
     #[test]
     fn test_statute_of_limitations() {
         *CLOCK_SLOT.write().unwrap() = SLOT + 5;
-        assert_eq!(
-            verify_with_clock().unwrap_err(),
-            SlashingError::DuplicateReport.into(),
-        );
+        verify_with_clock().unwrap();
 
         *CLOCK_SLOT.write().unwrap() = SLOT - 1;
         assert_eq!(
@@ -192,6 +198,26 @@ mod tests {
                 }
                 solana_program::entrypoint::SUCCESS
             }
+
+            fn sol_get_rent_sysvar(&self, var_addr: *mut u8) -> u64 {
+                unsafe {
+                    *(var_addr as *mut _ as *mut Rent) = Rent::default();
+                }
+                solana_program::entrypoint::SUCCESS
+            }
+
+            fn sol_invoke_signed(
+                &self,
+                _instruction: &Instruction,
+                account_infos: &[AccountInfo],
+                _signers_seeds: &[&[&[u8]]],
+            ) -> ProgramResult {
+                // Simulate allocate
+                unsafe {
+                    *account_infos[0].data.borrow_mut() = &mut *addr_of_mut!(DATA);
+                }
+                Ok(())
+            }
         }
 
         solana_sdk::program_stubs::set_syscall_stubs(Box::new(SyscallStubs {}));
@@ -212,8 +238,8 @@ mod tests {
         );
         let (pda, _) =
             get_violation_report_address(&leader.pubkey(), SLOT, ProofType::DuplicateBlockProof);
-        let mut pda_lamports = 0;
-        let mut pda_data = [1]; // Non zero so we don't attempt to write a report
+        let mut pda_lamports = 1_000_000_000;
+        let mut pda_data = []; // Non zero so we don't attempt to write a report
         let owner = id();
         let violation_pda_info = AccountInfo::new(
             &pda,
@@ -225,10 +251,10 @@ mod tests {
             false,
             0,
         );
-        let mut reporter_lamports = 10000000;
+        let mut reporter_lamports = 0;
         let owner = id();
         let reporter = Pubkey::new_unique();
-        let reporter_info = AccountInfo::new(
+        let proof_account = AccountInfo::new(
             &reporter,
             true,
             true,
@@ -240,10 +266,10 @@ mod tests {
         );
 
         let accounts = SlashingAccounts {
-            proof_account: &reporter_info,
+            proof_account: &proof_account,
             violation_pda_account: &violation_pda_info,
-            system_program_account: &reporter_info,
             instructions_sysvar: &instructions_sysvar_account,
+            system_program_account: &proof_account,
         };
 
         let report = ViolationReport {
