@@ -32,7 +32,7 @@ fn verify_proof_data<'a, 'b, T>(
 where
     T: SlashingProofData<'a>,
 {
-    // Statue of limitations is 1 epoch
+    // Statute of limitations is 1 epoch
     let slot = u64::from(report.slot);
     let clock = Clock::get()?;
     let Some(elapsed) = clock.slot.checked_sub(slot) else {
@@ -40,7 +40,7 @@ where
     };
     let epoch_schedule = EpochSchedule::get()?;
     if elapsed > epoch_schedule.slots_per_epoch {
-        return Err(SlashingError::ExceedsStatueOfLimitations.into());
+        return Err(SlashingError::ExceedsStatuteOfLimitations.into());
     }
 
     let (proof_data, context) =
@@ -152,7 +152,7 @@ mod tests {
     }
 
     #[test]
-    fn test_statue_of_limitations() {
+    fn test_statute_of_limitations() {
         *CLOCK_SLOT.write().unwrap() = SLOT + 5;
         assert_eq!(
             verify_with_clock().unwrap_err(),
@@ -168,7 +168,7 @@ mod tests {
         *CLOCK_SLOT.write().unwrap() = SLOT + DEFAULT_SLOTS_PER_EPOCH + 1;
         assert_eq!(
             verify_with_clock().unwrap_err(),
-            SlashingError::ExceedsStatueOfLimitations.into()
+            SlashingError::ExceedsStatuteOfLimitations.into()
         );
     }
 

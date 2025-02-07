@@ -13,9 +13,9 @@ pub enum SlashingError {
     #[error("Duplicate report")]
     DuplicateReport,
 
-    /// Violation is too old for statue of limitations
-    #[error("Exceeds statue of limitations")]
-    ExceedsStatueOfLimitations,
+    /// Violation is too old for statute of limitations
+    #[error("Exceeds statute of limitations")]
+    ExceedsStatuteOfLimitations,
 
     /// Invalid shred variant
     #[error("Invalid shred variant")]
