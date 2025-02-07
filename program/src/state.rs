@@ -154,10 +154,10 @@ impl<'a, 'b> SlashingAccounts<'a, 'b> {
     where
         T: SlashingProofData<'a>,
     {
-        self.violation_pda_account.try_borrow_mut_data()?
-            [0..std::mem::size_of::<ViolationReport>()]
+        let mut account_data = self.violation_pda_account.try_borrow_mut_data()?;
+        account_data[0..std::mem::size_of::<ViolationReport>()]
             .copy_from_slice(bytemuck::bytes_of(&report));
-        self.violation_pda_account.try_borrow_mut_data()?[std::mem::size_of::<ViolationReport>()..]
+        account_data[std::mem::size_of::<ViolationReport>()..]
             .copy_from_slice(&T::pack_proof(proof));
         Ok(())
     }
@@ -275,6 +275,16 @@ where
         ],
         &[&seeds],
     )?;
+
+    // Verify that the account can now hold the report
+    if accounts.violation_pda_account.data_len() != data_len {
+        msg!(
+            "Something has gone wrong, account is improperly sized {} vs expected {}",
+            accounts.violation_pda_account.data_len(),
+            data_len
+        );
+        return Err(ProgramError::InvalidAccountData);
+    }
 
     // Write the report
     accounts.write_violation_report(report, proof_data)
