@@ -221,7 +221,6 @@ impl ViolationReport {
 /// Returns a boolean specifying if this was the first report of this
 /// violation
 pub(crate) fn store_violation_report<'a, 'b, T>(
-    slot: Slot,
     report: ViolationReport,
     accounts: &SlashingAccounts<'a, 'b>,
     proof_data: T,
@@ -229,8 +228,9 @@ pub(crate) fn store_violation_report<'a, 'b, T>(
 where
     T: SlashingProofData<'a>,
 {
+    let slot = report.slot;
     let pubkey_seed = report.pubkey.as_ref();
-    let slot_seed = slot.to_le_bytes();
+    let slot_seed = slot.0;
     let violation_seed = [report.violation_type];
     let mut seeds: Vec<&[u8]> = vec![&pubkey_seed, &slot_seed, &violation_seed];
     let (pda, bump) = Pubkey::find_program_address(&seeds, &id());
@@ -248,7 +248,7 @@ where
         msg!(
             "{} violation verified in slot {} however the violation has already been reported",
             T::PROOF_TYPE.violation_str(),
-            slot,
+            u64::from(slot),
         );
         return Err(ProgramError::from(SlashingError::DuplicateReport));
     }

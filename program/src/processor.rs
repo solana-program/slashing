@@ -48,7 +48,7 @@ where
 
     SlashingProofData::verify_proof(&proof_data, context, slot, &report.pubkey)?;
 
-    store_violation_report(slot, report, accounts, proof_data)?;
+    store_violation_report(report, accounts, proof_data)?;
     msg!(
         "{} violation verified in slot {}. This incident has been recorded",
         T::PROOF_TYPE.violation_str(),
