@@ -8,48 +8,49 @@ use {
             decode_instruction_data, decode_instruction_type, DuplicateBlockProofInstructionData,
             SlashingInstruction,
         },
-        state::SlashingProofData,
+        state::{
+            store_violation_report, PodEpoch, ProofType, SlashingAccounts, SlashingProofData,
+            ViolationReport,
+        },
     },
     solana_program::{
-        account_info::{next_account_info, AccountInfo},
-        clock::Slot,
+        account_info::AccountInfo,
         entrypoint::ProgramResult,
         msg,
         program_error::ProgramError,
         pubkey::Pubkey,
         sysvar::{clock::Clock, epoch_schedule::EpochSchedule, Sysvar},
     },
-    std::slice::Iter,
 };
 
 fn verify_proof_data<'a, 'b, T>(
-    slot: Slot,
-    pubkey: &Pubkey,
+    report: ViolationReport,
+    accounts: &SlashingAccounts<'a, 'b>,
     proof_data: &'a [u8],
     instruction_data: &'a [u8],
-    accounts_info_iter: &'a mut Iter<'_, AccountInfo<'b>>,
 ) -> ProgramResult
 where
     T: SlashingProofData<'a>,
 {
-    // Statue of limitations is 1 epoch
+    // Statute of limitations is 1 epoch
+    let slot = u64::from(report.slot);
     let clock = Clock::get()?;
     let Some(elapsed) = clock.slot.checked_sub(slot) else {
         return Err(ProgramError::ArithmeticOverflow);
     };
     let epoch_schedule = EpochSchedule::get()?;
     if elapsed > epoch_schedule.slots_per_epoch {
-        return Err(SlashingError::ExceedsStatueOfLimitations.into());
+        return Err(SlashingError::ExceedsStatuteOfLimitations.into());
     }
 
-    let (proof_data, context) = T::unpack(proof_data, instruction_data, accounts_info_iter)?;
+    let (proof_data, context) =
+        T::unpack_proof_and_context(proof_data, instruction_data, accounts)?;
 
-    SlashingProofData::verify_proof(proof_data, context, slot, pubkey)?;
+    SlashingProofData::verify_proof(&proof_data, context, slot, &report.pubkey)?;
 
-    // TODO: follow up PR will record this violation in context state account. just
-    // log for now.
+    store_violation_report(report, accounts, proof_data)?;
     msg!(
-        "{} violation verified in slot {}. This incident will be recorded",
+        "{} violation verified in slot {}. This incident has been recorded",
         T::PROOF_TYPE.violation_str(),
         slot
     );
@@ -64,18 +65,26 @@ pub fn process_instruction(
 ) -> ProgramResult {
     let instruction_type = decode_instruction_type(input)?;
     let account_info_iter = &mut accounts.iter();
-    let proof_data_info = next_account_info(account_info_iter)?;
-
+    let accounts = SlashingAccounts::new(account_info_iter)?;
     match instruction_type {
         SlashingInstruction::DuplicateBlockProof => {
             let data = decode_instruction_data::<DuplicateBlockProofInstructionData>(input)?;
-            let proof_data = &proof_data_info.data.borrow()[u64::from(data.offset) as usize..];
+            let proof_data = &accounts.proof_account.try_borrow_data()?[data.offset()?..];
+            let violation_report = ViolationReport {
+                version: ViolationReport::VERSION,
+                reporter: data.reporter,
+                destination: data.destination,
+                epoch: PodEpoch::from(Clock::get()?.epoch),
+                pubkey: data.node_pubkey,
+                slot: data.slot,
+                violation_type: u8::from(ProofType::DuplicateBlockProof),
+                proof_account: *accounts.proof_account(),
+            };
             verify_proof_data::<DuplicateBlockProofData>(
-                data.slot.into(),
-                &data.node_pubkey,
+                violation_report,
+                &accounts,
                 proof_data,
                 input,
-                account_info_iter,
             )?;
             Ok(())
         }
@@ -89,8 +98,10 @@ mod tests {
         crate::{
             duplicate_block_proof::DuplicateBlockProofData,
             error::SlashingError,
+            get_violation_report_address, id,
             instruction::{construct_instructions_and_sysvar, DuplicateBlockProofInstructionData},
             shred::tests::new_rand_data_shred,
+            state::{PodEpoch, ProofType, SlashingAccounts, SlashingProofData, ViolationReport},
         },
         rand::Rng,
         solana_ledger::shred::Shredder,
@@ -99,6 +110,8 @@ mod tests {
             clock::{Clock, Slot, DEFAULT_SLOTS_PER_EPOCH},
             epoch_schedule::EpochSchedule,
             program_error::ProgramError,
+            pubkey::Pubkey,
+            rent::Rent,
             signature::Keypair,
             signer::Signer,
             sysvar::instructions::{self},
@@ -108,6 +121,8 @@ mod tests {
     };
 
     const SLOT: Slot = 53084024;
+    // Based on the empircal size of two data shreds
+    const SIZE: usize = 2414 + std::mem::size_of::<ViolationReport>();
     lazy_static::lazy_static! {
         static ref CLOCK_SLOT: Arc<RwLock<Slot>> = Arc::new(RwLock::new(SLOT));
     }
@@ -125,6 +140,8 @@ mod tests {
             slot: PodU64::from(slot),
             offset: PodU64::from(0),
             node_pubkey: leader.pubkey(),
+            reporter: Pubkey::new_unique(),
+            destination: Pubkey::new_unique(),
             shred_1_merkle_root: shred1.merkle_root().unwrap(),
             shred_2_merkle_root: shred2.merkle_root().unwrap(),
             shred_1_signature: shred1.signature().as_ref().try_into().unwrap(),
@@ -134,11 +151,11 @@ mod tests {
             shred1: shred1.payload().as_ref(),
             shred2: shred2.payload().as_ref(),
         };
-        (sigverify_data, proof_data.pack())
+        (sigverify_data, proof_data.pack_proof())
     }
 
     #[test]
-    fn test_statue_of_limitations() {
+    fn test_statute_of_limitations() {
         *CLOCK_SLOT.write().unwrap() = SLOT + 5;
         verify_with_clock().unwrap();
 
@@ -151,7 +168,7 @@ mod tests {
         *CLOCK_SLOT.write().unwrap() = SLOT + DEFAULT_SLOTS_PER_EPOCH + 1;
         assert_eq!(
             verify_with_clock().unwrap_err(),
-            SlashingError::ExceedsStatueOfLimitations.into()
+            SlashingError::ExceedsStatuteOfLimitations.into()
         );
     }
 
@@ -175,6 +192,13 @@ mod tests {
                 }
                 solana_program::entrypoint::SUCCESS
             }
+
+            fn sol_get_rent_sysvar(&self, var_addr: *mut u8) -> u64 {
+                unsafe {
+                    *(var_addr as *mut _ as *mut Rent) = Rent::default();
+                }
+                solana_program::entrypoint::SUCCESS
+            }
         }
 
         solana_sdk::program_stubs::set_syscall_stubs(Box::new(SyscallStubs {}));
@@ -193,13 +217,58 @@ mod tests {
             false,
             0,
         );
+        let (pda, _) =
+            get_violation_report_address(&leader.pubkey(), SLOT, ProofType::DuplicateBlockProof);
+        let mut pda_lamports = 1_000_000_000;
+        let mut pda_data = [0u8; SIZE];
+        let owner = id();
+        let violation_pda_info = AccountInfo::new(
+            &pda,
+            false,
+            true,
+            &mut pda_lamports,
+            &mut pda_data,
+            &owner,
+            false,
+            0,
+        );
+        let mut reporter_lamports = 0;
+        let owner = id();
+        let reporter = Pubkey::new_unique();
+        let proof_account = AccountInfo::new(
+            &reporter,
+            true,
+            true,
+            &mut reporter_lamports,
+            &mut [],
+            &owner,
+            false,
+            0,
+        );
+
+        let accounts = SlashingAccounts {
+            proof_account: &proof_account,
+            violation_pda_account: &violation_pda_info,
+            instructions_sysvar: &instructions_sysvar_account,
+            system_program_account: &proof_account,
+        };
+
+        let report = ViolationReport {
+            version: ViolationReport::VERSION,
+            reporter,
+            destination: Pubkey::new_unique(),
+            epoch: PodEpoch::from(100),
+            pubkey: leader.pubkey(),
+            slot: PodU64::from(SLOT),
+            violation_type: u8::from(ProofType::DuplicateBlockProof),
+            proof_account: Pubkey::new_unique(),
+        };
 
         verify_proof_data::<DuplicateBlockProofData>(
-            SLOT,
-            &leader.pubkey(),
+            report,
+            &accounts,
             &proof_data,
-            &instructions[1].data,
-            &mut [instructions_sysvar_account].iter(),
+            &instructions[2].data,
         )
     }
 }

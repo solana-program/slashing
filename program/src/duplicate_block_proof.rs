@@ -4,19 +4,12 @@ use {
         error::SlashingError,
         shred::{Shred, ShredType},
         sigverify::SignatureVerification,
-        state::{ProofType, SlashingProofData},
+        state::{ProofType, SlashingAccounts, SlashingProofData},
     },
     bytemuck::try_from_bytes,
-    solana_program::{
-        account_info::{next_account_info, AccountInfo},
-        clock::Slot,
-        hash::Hash,
-        msg,
-        pubkey::Pubkey,
-    },
+    solana_program::{account_info::AccountInfo, clock::Slot, hash::Hash, msg, pubkey::Pubkey},
     solana_signature::SIGNATURE_BYTES,
     spl_pod::primitives::PodU32,
-    std::slice::Iter,
 };
 
 /// The verification instruction occurs immediately before the slashing
@@ -76,7 +69,7 @@ impl<'a> DuplicateBlockProofContext<'a> {
 }
 
 /// Proof of a duplicate block violation
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub struct DuplicateBlockProofData<'a> {
     /// Shred signed by a leader
     pub shred1: &'a [u8],
@@ -87,39 +80,8 @@ pub struct DuplicateBlockProofData<'a> {
 impl<'a> DuplicateBlockProofData<'a> {
     const LENGTH_SIZE: usize = std::mem::size_of::<PodU32>();
 
-    /// Packs proof data to write in account for
-    /// `SlashingInstruction::DuplicateBlockProof`
-    pub fn pack(self) -> Vec<u8> {
-        let mut buf = vec![];
-        buf.extend_from_slice(&(self.shred1.len() as u32).to_le_bytes());
-        buf.extend_from_slice(self.shred1);
-        buf.extend_from_slice(&(self.shred2.len() as u32).to_le_bytes());
-        buf.extend_from_slice(self.shred2);
-        buf
-    }
-
-    /// Given the maximum size of a shred as `shred_size` this returns
-    /// the maximum size of the account needed to store a
-    /// `DuplicateBlockProofData`
-    pub const fn size_of(shred_size: usize) -> usize {
-        2usize
-            .wrapping_mul(shred_size)
-            .saturating_add(2 * Self::LENGTH_SIZE)
-    }
-}
-
-impl<'a> SlashingProofData<'a> for DuplicateBlockProofData<'a> {
-    const PROOF_TYPE: ProofType = ProofType::DuplicateBlockProof;
-    type Context = DuplicateBlockProofContext<'a>;
-
-    fn unpack<'b>(
-        proof_account_data: &'a [u8],
-        instruction_data: &'a [u8],
-        account_info_iter: &'a mut Iter<'_, AccountInfo<'b>>,
-    ) -> Result<(Self, Self::Context), SlashingError>
-    where
-        Self: Sized,
-    {
+    /// Unpacks a proof account into a `DuplicateBlockProofData`
+    pub fn unpack_proof(proof_account_data: &'a [u8]) -> Result<Self, SlashingError> {
         if proof_account_data.len() < Self::LENGTH_SIZE {
             return Err(SlashingError::ProofBufferTooSmall);
         }
@@ -144,17 +106,62 @@ impl<'a> SlashingProofData<'a> for DuplicateBlockProofData<'a> {
         if shred2.len() < shred2_length {
             return Err(SlashingError::ProofBufferTooSmall);
         }
+        let (shred2, _) = shred2.split_at(shred2_length);
 
-        let instructions_sysvar = next_account_info(account_info_iter)
-            .map_err(|_| SlashingError::MissingInstructionsSysvar)?;
-        let context =
-            DuplicateBlockProofContext::unpack_context(instruction_data, instructions_sysvar)?;
+        Ok(Self { shred1, shred2 })
+    }
 
-        Ok((Self { shred1, shred2 }, context))
+    /// Given the maximum size of a shred as `shred_size` this returns
+    /// the maximum size of the account needed to store a
+    /// `DuplicateBlockProofData`
+    pub(crate) const fn size(shred_size: usize) -> usize {
+        2usize
+            .saturating_mul(shred_size)
+            .saturating_add(2 * Self::LENGTH_SIZE)
+    }
+}
+
+impl<'a> SlashingProofData<'a> for DuplicateBlockProofData<'a> {
+    const PROOF_TYPE: ProofType = ProofType::DuplicateBlockProof;
+    type Context = DuplicateBlockProofContext<'a>;
+
+    /// Gives the serialized size of the current proof
+    fn packed_len(&self) -> usize {
+        self.shred1
+            .len()
+            .saturating_add(self.shred2.len())
+            .saturating_add(2 * Self::LENGTH_SIZE)
+    }
+
+    /// Packs proof data to write in account for
+    /// `SlashingInstruction::DuplicateBlockProof`
+    fn pack_proof(self) -> Vec<u8> {
+        let mut buf = vec![];
+        buf.extend_from_slice(&(self.shred1.len() as u32).to_le_bytes());
+        buf.extend_from_slice(self.shred1);
+        buf.extend_from_slice(&(self.shred2.len() as u32).to_le_bytes());
+        buf.extend_from_slice(self.shred2);
+        buf
+    }
+
+    fn unpack_proof_and_context<'b>(
+        proof_account_data: &'a [u8],
+        instruction_data: &'a [u8],
+        accounts: &SlashingAccounts<'a, 'b>,
+    ) -> Result<(Self, Self::Context), SlashingError>
+    where
+        Self: Sized,
+    {
+        let context = DuplicateBlockProofContext::unpack_context(
+            instruction_data,
+            accounts.instructions_sysvar,
+        )?;
+
+        Ok((Self::unpack_proof(proof_account_data)?, context))
     }
 
     fn verify_proof(
-        self,
+        &self,
         context: Self::Context,
         slot: Slot,
         node_pubkey: &Pubkey,
@@ -431,11 +438,15 @@ mod tests {
     #[test]
     fn test_unpack_context() {
         let node_pubkey = Pubkey::new_unique();
+        let reporter = Pubkey::new_unique();
+        let destination = Pubkey::new_unique();
         let slot = 100;
         let instruction_data = DuplicateBlockProofInstructionData {
             slot: PodU64::from(slot),
             offset: PodU64::from(0),
             node_pubkey,
+            reporter,
+            destination,
             shred_1_merkle_root: Hash::new_unique(),
             shred_1_signature: Signature::new_unique().into(),
             shred_2_merkle_root: Hash::new_unique(),
@@ -455,7 +466,7 @@ mod tests {
             0,
         );
         let context =
-            DuplicateBlockProofContext::unpack_context(&instructions[1].data, &instructions_sysvar)
+            DuplicateBlockProofContext::unpack_context(&instructions[2].data, &instructions_sysvar)
                 .unwrap();
 
         assert_eq!(*context.expected_pubkey, node_pubkey);

@@ -1,11 +1,24 @@
 //! Program state
 use {
-    crate::{duplicate_block_proof::DuplicateBlockProofData, error::SlashingError},
-    solana_program::{account_info::AccountInfo, clock::Slot, pubkey::Pubkey},
-    std::slice::Iter,
+    crate::{check_id, duplicate_block_proof::DuplicateBlockProofData, error::SlashingError, id},
+    bytemuck::{Pod, Zeroable},
+    solana_program::{
+        account_info::{next_account_info, AccountInfo},
+        clock::Slot,
+        msg,
+        program::invoke_signed,
+        program_error::ProgramError,
+        pubkey::Pubkey,
+        rent::Rent,
+        system_instruction, system_program,
+        sysvar::{self, Sysvar},
+    },
+    spl_pod::primitives::PodU64,
 };
 
 const PACKET_DATA_SIZE: usize = 1232;
+type PodSlot = PodU64;
+pub(crate) type PodEpoch = PodU64;
 
 /// Types of slashing proofs
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -25,7 +38,7 @@ impl ProofType {
             Self::InvalidType => panic!("Cannot determine size of invalid proof type"),
             Self::DuplicateBlockProof => {
                 // Duplicate block proof consists of 2 shreds that can be `PACKET_DATA_SIZE`.
-                DuplicateBlockProofData::size_of(PACKET_DATA_SIZE)
+                DuplicateBlockProofData::size(PACKET_DATA_SIZE)
             }
         }
     }
@@ -65,22 +78,216 @@ pub trait SlashingProofData<'a> {
     /// The context needed to verify the proof
     type Context;
 
+    /// The size of the proof in bytes
+    fn packed_len(&self) -> usize;
+
+    /// Pack the proof data into a raw data buffer
+    fn pack_proof(self) -> Vec<u8>;
+
     /// Zero copy from raw data buffers and initialize any context
-    fn unpack<'b>(
+    fn unpack_proof_and_context<'b>(
         proof_account_data: &'a [u8],
         instruction_data: &'a [u8],
-        account_info_iter: &'a mut Iter<'_, AccountInfo<'b>>,
+        accounts: &SlashingAccounts<'a, 'b>,
     ) -> Result<(Self, Self::Context), SlashingError>
     where
         Self: Sized;
 
     /// Verification logic for this type of proof data
     fn verify_proof(
-        self,
+        &self,
         context: Self::Context,
         slot: Slot,
         pubkey: &Pubkey,
     ) -> Result<(), SlashingError>;
+}
+
+/// Accounts relevant for the slashing program
+pub struct SlashingAccounts<'a, 'b> {
+    pub(crate) proof_account: &'a AccountInfo<'b>,
+    pub(crate) violation_pda_account: &'a AccountInfo<'b>,
+    pub(crate) instructions_sysvar: &'a AccountInfo<'b>,
+    pub(crate) system_program_account: &'a AccountInfo<'b>,
+}
+
+impl<'a, 'b> SlashingAccounts<'a, 'b> {
+    pub(crate) fn new<I>(account_info_iter: &mut I) -> Result<Self, ProgramError>
+    where
+        I: Iterator<Item = &'a AccountInfo<'b>>,
+    {
+        let res = Self {
+            proof_account: next_account_info(account_info_iter)?,
+            violation_pda_account: next_account_info(account_info_iter)?,
+            instructions_sysvar: next_account_info(account_info_iter)?,
+            system_program_account: next_account_info(account_info_iter)?,
+        };
+        if !sysvar::instructions::check_id(res.instructions_sysvar.key) {
+            return Err(ProgramError::from(SlashingError::MissingInstructionsSysvar));
+        }
+        if !system_program::check_id(res.system_program_account.key) {
+            return Err(ProgramError::from(
+                SlashingError::MissingSystemProgramAccount,
+            ));
+        }
+        Ok(res)
+    }
+
+    pub(crate) fn proof_account(&self) -> &Pubkey {
+        self.proof_account.key
+    }
+
+    fn violation_account(&self) -> &Pubkey {
+        self.violation_pda_account.key
+    }
+
+    fn violation_account_exists(&self) -> Result<bool, ProgramError> {
+        Ok(!self.violation_pda_account.data_is_empty()
+            && check_id(self.violation_pda_account.owner)
+            && ViolationReport::version(&self.violation_pda_account.try_borrow_data()?) > 0)
+    }
+
+    fn write_violation_report<T>(
+        &self,
+        report: ViolationReport,
+        proof: T,
+    ) -> Result<(), ProgramError>
+    where
+        T: SlashingProofData<'a>,
+    {
+        let mut account_data = self.violation_pda_account.try_borrow_mut_data()?;
+        account_data[0..std::mem::size_of::<ViolationReport>()]
+            .copy_from_slice(bytemuck::bytes_of(&report));
+        account_data[std::mem::size_of::<ViolationReport>()..]
+            .copy_from_slice(&T::pack_proof(proof));
+        Ok(())
+    }
+}
+
+/// On chain proof report of a slashable violation
+/// The report account will contain this optionally followed by the
+/// serialized proof
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Pod, Zeroable, PartialEq)]
+pub struct ViolationReport {
+    /// The report format version number
+    pub version: u8,
+    /// The first reporter of this violation
+    pub reporter: Pubkey,
+    /// Account to credit the lamports when this proof report is closed
+    pub destination: Pubkey,
+    /// Epoch in which this report was created
+    pub epoch: PodEpoch,
+    /// Identity of the violator
+    pub pubkey: Pubkey,
+    /// Slot in which the violation occurred
+    pub slot: PodSlot,
+    /// Discriminant of `ProofType` representing the violation type
+    pub violation_type: u8,
+    /// Account where the proof is stored
+    pub proof_account: Pubkey,
+}
+
+impl ViolationReport {
+    /// The current version
+    pub const VERSION: u8 = 1;
+
+    /// Returns the version of the violation account
+    pub fn version(data: &[u8]) -> u8 {
+        data[0]
+    }
+
+    /// Returns the packed length of this violation report plus the packed
+    /// length of `proof`
+    pub fn packed_len<'a, T: SlashingProofData<'a>>(proof: &T) -> usize {
+        std::mem::size_of::<ViolationReport>().saturating_add(proof.packed_len())
+    }
+
+    /// Returns the maximum size of the serialized report plus the maximum size
+    /// of a proof for `T`
+    pub const fn size<'a, T: SlashingProofData<'a>>() -> usize {
+        std::mem::size_of::<ViolationReport>().saturating_add(T::PROOF_TYPE.proof_account_length())
+    }
+}
+
+/// Store a `ProofReport` of a successful proof at a
+/// PDA derived from the `pubkey`, `slot`, and `T:PROOF_TYPE`.
+///
+/// Returns a boolean specifying if this was the first report of this
+/// violation
+pub(crate) fn store_violation_report<'a, 'b, T>(
+    report: ViolationReport,
+    accounts: &SlashingAccounts<'a, 'b>,
+    proof_data: T,
+) -> Result<(), ProgramError>
+where
+    T: SlashingProofData<'a>,
+{
+    let slot = report.slot;
+    let pubkey_seed = report.pubkey.as_ref();
+    let slot_seed = slot.0;
+    let violation_seed = [report.violation_type];
+    let mut seeds: Vec<&[u8]> = vec![&pubkey_seed, &slot_seed, &violation_seed];
+    let (pda, bump) = Pubkey::find_program_address(&seeds, &id());
+    let bump_seed = [bump];
+    seeds.push(&bump_seed);
+
+    if pda != *accounts.violation_account() {
+        return Err(ProgramError::from(
+            SlashingError::InvalidViolationReportAcccount,
+        ));
+    }
+
+    // Check if it was already reported
+    if accounts.violation_account_exists()? {
+        msg!(
+            "{} violation verified in slot {} however the violation has already been reported",
+            T::PROOF_TYPE.violation_str(),
+            u64::from(slot),
+        );
+        return Err(ProgramError::from(SlashingError::DuplicateReport));
+    }
+
+    // Check if the account has been prefunded to store the report
+    let data_len = ViolationReport::packed_len(&proof_data);
+    let lamports = Rent::get()?.minimum_balance(data_len);
+    if accounts.violation_pda_account.try_lamports()? < lamports {
+        return Err(ProgramError::from(SlashingError::ReportAccountNotPrefunded));
+    }
+
+    // Allocate enough space for the report
+    let allocate_instruction = system_instruction::allocate(&pda, data_len as u64);
+    invoke_signed(
+        &allocate_instruction,
+        &[
+            accounts.violation_pda_account.clone(),
+            accounts.system_program_account.clone(),
+        ],
+        &[&seeds],
+    )?;
+
+    // Assign the slashing program as the owner
+    let assign_instruction = system_instruction::assign(&pda, &id());
+    invoke_signed(
+        &assign_instruction,
+        &[
+            accounts.violation_pda_account.clone(),
+            accounts.system_program_account.clone(),
+        ],
+        &[&seeds],
+    )?;
+
+    // Verify that the account can now hold the report
+    if accounts.violation_pda_account.data_len() != data_len {
+        msg!(
+            "Something has gone wrong, account is improperly sized {} vs expected {}",
+            accounts.violation_pda_account.data_len(),
+            data_len
+        );
+        return Err(ProgramError::InvalidAccountData);
+    }
+
+    // Write the report
+    accounts.write_violation_report(report, proof_data)
 }
 
 #[cfg(test)]

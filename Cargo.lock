@@ -6434,6 +6434,7 @@ dependencies = [
  "solana-program-test",
  "solana-sdk",
  "solana-signature",
+ "solana-system-program",
  "spl-pod 0.5.0",
  "spl-record",
  "thiserror 2.0.11",

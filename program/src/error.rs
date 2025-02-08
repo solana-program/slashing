@@ -9,9 +9,13 @@ use {
 /// Errors that may be returned by the program.
 #[derive(Clone, Copy, Debug, Eq, Error, FromPrimitive, PartialEq)]
 pub enum SlashingError {
-    /// Violation is too old for statue of limitations
-    #[error("Exceeds statue of limitations")]
-    ExceedsStatueOfLimitations,
+    /// Violation has already been reported
+    #[error("Duplicate report")]
+    DuplicateReport,
+
+    /// Violation is too old for statute of limitations
+    #[error("Exceeds statute of limitations")]
+    ExceedsStatuteOfLimitations,
 
     /// Invalid shred variant
     #[error("Invalid shred variant")]
@@ -37,6 +41,10 @@ pub enum SlashingError {
     #[error("Invalid last index conflict")]
     InvalidLastIndexConflict,
 
+    /// Invalid violation report account
+    #[error("Invalid violation report account")]
+    InvalidViolationReportAcccount,
+
     /// Invalid shred version on duplicate block proof shreds
     #[error("Invalid shred version")]
     InvalidShredVersion,
@@ -57,6 +65,10 @@ pub enum SlashingError {
     #[error("Signature verification instruction is missing")]
     MissingSignatureVerification,
 
+    /// Missing system program account
+    #[error("System program account is missing")]
+    MissingSystemProgramAccount,
+
     /// Unable to deserialize proof buffer
     #[error("Proof buffer deserialization error")]
     ProofBufferDeserializationError,
@@ -64,6 +76,11 @@ pub enum SlashingError {
     /// Proof buffer is too small
     #[error("Proof buffer too small")]
     ProofBufferTooSmall,
+
+    /// Report account is not prefunded with enough lamports to store
+    /// the violation report
+    #[error("Report account is not prefunded with enough lamports")]
+    ReportAccountNotPrefunded,
 
     /// Shred deserialization error
     #[error("Deserialization error")]
