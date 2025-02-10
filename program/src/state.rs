@@ -254,17 +254,6 @@ where
         return Err(ProgramError::from(SlashingError::ReportAccountNotPrefunded));
     }
 
-    // Allocate enough space for the report
-    let allocate_instruction = system_instruction::allocate(&pda, data_len as u64);
-    invoke_signed(
-        &allocate_instruction,
-        &[
-            accounts.violation_pda_account.clone(),
-            accounts.system_program_account.clone(),
-        ],
-        &[&seeds],
-    )?;
-
     // Assign the slashing program as the owner
     let assign_instruction = system_instruction::assign(&pda, &id());
     invoke_signed(
@@ -275,6 +264,9 @@ where
         ],
         &[&seeds],
     )?;
+
+    // Allocate enough space for the report
+    accounts.violation_pda_account.realloc(data_len, false)?;
 
     // Verify that the account can now hold the report
     if accounts.violation_pda_account.data_len() != data_len {
