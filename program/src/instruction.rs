@@ -29,6 +29,21 @@ use {
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, TryFromPrimitive, IntoPrimitive)]
 pub enum SlashingInstruction {
+    /// Close the report account that was created after successfully submitting
+    /// a slashing proof. To ensure that the runtime and indexers have seen the
+    /// report, we require that at least 3 epochs have passed since creation.
+    ///
+    /// After closing the account, we credit the lamports to the destination
+    /// address denoted in the report.
+    ///
+    /// Accounts expected by this instruction:
+    /// 0. `[WRITE]` PDA where the violation report is stored, see
+    ///    `[get_violation_report_address]` for the address derivation.
+    /// 1. `[WRITE]` Destination account which will be credited the lamports
+    ///    from the PDA.
+    /// 2. `[]` System program
+    CloseViolationReport,
+
     /// Submit a slashable violation proof for `node_pubkey`, which indicates
     /// that they submitted a duplicate block to the network
     ///
@@ -36,7 +51,8 @@ pub enum SlashingInstruction {
     /// Accounts expected by this instruction:
     /// 0. `[]` Proof account, must be previously initialized with the proof
     ///    data.
-    /// 1. `[WRITE]` PDA to store the violation report
+    /// 1. `[WRITE]` PDA to store the violation report, see
+    ///    `[get_violation_report_address]` for the address derivation.
     /// 2. `[]` Instructions sysvar
     /// 3. `[]` System program
     ///
@@ -139,6 +155,25 @@ pub(crate) fn decode_instruction_data<T: Pod>(input_with_type: &[u8]) -> Result<
     } else {
         pod_from_bytes(&input_with_type[1..])
     }
+}
+
+/// Create a `SlashingInstruction::CloseViolationReport` instruction
+/// Callers can use `[get_violation_report_address]` to derive the report
+/// account address
+pub fn close_violation_report(
+    report_account: &Pubkey,
+    destination_account: &Pubkey,
+) -> Instruction {
+    let accounts = vec![
+        AccountMeta::new(*report_account, false),
+        AccountMeta::new(*destination_account, false),
+        AccountMeta::new_readonly(system_program::id(), false),
+    ];
+    encode_instruction(
+        accounts,
+        SlashingInstruction::CloseViolationReport,
+        &[0u8; 0],
+    )
 }
 
 /// Create a `SlashingInstruction::DuplicateBlockProof` instruction
@@ -286,7 +321,7 @@ mod tests {
             shred_2_signature,
         };
         let instruction = duplicate_block_proof(&Pubkey::new_unique(), &instruction_data);
-        let mut expected = vec![0];
+        let mut expected = vec![1];
         expected.extend_from_slice(&offset.to_le_bytes());
         expected.extend_from_slice(&slot.to_le_bytes());
         expected.extend_from_slice(&node_pubkey.to_bytes());
@@ -314,6 +349,16 @@ mod tests {
         assert_eq!(instruction_data.shred_1_signature, shred_1_signature);
         assert_eq!(instruction_data.shred_2_merkle_root, shred_2_merkle_root);
         assert_eq!(instruction_data.shred_2_signature, shred_2_signature);
+    }
+
+    #[test]
+    fn serialize_close_violation_report() {
+        let instruction = close_violation_report(&Pubkey::new_unique(), &Pubkey::new_unique());
+
+        assert_eq!(
+            SlashingInstruction::CloseViolationReport,
+            decode_instruction_type(&instruction.data).unwrap()
+        );
     }
 
     #[test]

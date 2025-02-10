@@ -1,10 +1,13 @@
 //! Program state
 use {
-    crate::{check_id, duplicate_block_proof::DuplicateBlockProofData, error::SlashingError, id},
+    crate::{
+        check_id, duplicate_block_proof::DuplicateBlockProofData, error::SlashingError, id,
+        ViolationReportAddress,
+    },
     bytemuck::{Pod, Zeroable},
     solana_program::{
         account_info::{next_account_info, AccountInfo},
-        clock::Slot,
+        clock::{Epoch, Slot},
         msg,
         program::invoke_signed,
         program_error::ProgramError,
@@ -13,7 +16,7 @@ use {
         system_instruction, system_program,
         sysvar::{self, Sysvar},
     },
-    spl_pod::primitives::PodU64,
+    spl_pod::{bytemuck::pod_from_bytes, primitives::PodU64},
 };
 
 const PACKET_DATA_SIZE: usize = 1232;
@@ -222,16 +225,15 @@ pub(crate) fn store_violation_report<'a, 'b, T>(
 where
     T: SlashingProofData<'a>,
 {
-    let slot = report.slot;
-    let pubkey_seed = report.pubkey.as_ref();
-    let slot_seed = slot.0;
-    let violation_seed = [report.violation_type];
-    let mut seeds: Vec<&[u8]> = vec![&pubkey_seed, &slot_seed, &violation_seed];
-    let (pda, bump) = Pubkey::find_program_address(&seeds, &id());
-    let bump_seed = [bump];
-    seeds.push(&bump_seed);
+    let report_address = ViolationReportAddress::new(&report);
+    let report_key = report_address.key();
+    let seeds = report_address.seeds();
+    let cpi_accounts = [
+        accounts.violation_pda_account.clone(),
+        accounts.system_program_account.clone(),
+    ];
 
-    if pda != *accounts.violation_account() {
+    if *report_key != *accounts.violation_account() {
         return Err(ProgramError::from(
             SlashingError::InvalidViolationReportAcccount,
         ));
@@ -242,7 +244,7 @@ where
         msg!(
             "{} violation verified in slot {} however the violation has already been reported",
             T::PROOF_TYPE.violation_str(),
-            u64::from(slot),
+            u64::from(report.slot),
         );
         return Err(ProgramError::from(SlashingError::DuplicateReport));
     }
@@ -255,15 +257,8 @@ where
     }
 
     // Assign the slashing program as the owner
-    let assign_instruction = system_instruction::assign(&pda, &id());
-    invoke_signed(
-        &assign_instruction,
-        &[
-            accounts.violation_pda_account.clone(),
-            accounts.system_program_account.clone(),
-        ],
-        &[&seeds],
-    )?;
+    let assign_instruction = system_instruction::assign(report_key, &id());
+    invoke_signed(&assign_instruction, &cpi_accounts, &[&seeds])?;
 
     // Allocate enough space for the report
     accounts.violation_pda_account.realloc(data_len, false)?;
@@ -280,6 +275,61 @@ where
 
     // Write the report
     accounts.write_violation_report(report, proof_data)
+}
+
+pub(crate) fn close_violation_report<'a, 'b>(
+    report_account: &'a AccountInfo<'b>,
+    destination_account: &'a AccountInfo<'b>,
+    system_program_account: &'a AccountInfo<'b>,
+) -> Result<(), ProgramError> {
+    let report_data = report_account.try_borrow_data()?;
+    let report: &ViolationReport =
+        pod_from_bytes(&report_data[0..std::mem::size_of::<ViolationReport>()])?;
+    let report_address = ViolationReportAddress::new(report);
+    let report_key = *report_address.key();
+    let destination = report.destination;
+
+    debug_assert_eq!(*report_account.key, report_key);
+
+    if Epoch::from(report.epoch).saturating_add(3) > sysvar::clock::Clock::get()?.epoch {
+        return Err(ProgramError::from(
+            SlashingError::CloseViolationReportTooSoon,
+        ));
+    }
+
+    if destination != *destination_account.key {
+        return Err(ProgramError::from(SlashingError::InvalidDestinationAccount));
+    }
+
+    // Copy seeds and drop as we will modify the report account
+    let seeds = report_address.seeds_owned();
+    let seeds: Vec<&[u8]> = seeds.iter().map(|seed| &seed[..]).collect();
+    drop(report_data);
+
+    // Reallocate the account to 0 bytes
+    report_account.realloc(0, false)?;
+
+    // Assign the system program as the owner
+    report_account.assign(&system_program::id());
+
+    // Transfer the lamports to the destination address
+    let lamports = report_account.lamports();
+    let transfer_instruction = system_instruction::transfer(&report_key, &destination, lamports);
+    invoke_signed(
+        &transfer_instruction,
+        &[
+            report_account.clone(),
+            destination_account.clone(),
+            system_program_account.clone(),
+        ],
+        &[&seeds],
+    )?;
+
+    msg!(
+        "Closed violation report and credited {} lamports to the destination address",
+        lamports
+    );
+    Ok(())
 }
 
 #[cfg(test)]

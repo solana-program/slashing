@@ -9,6 +9,11 @@ use {
 /// Errors that may be returned by the program.
 #[derive(Clone, Copy, Debug, Eq, Error, FromPrimitive, PartialEq)]
 pub enum SlashingError {
+    /// Attempting to close a violation report before 3
+    /// epochs have passed
+    #[error("Closing violation report too soon")]
+    CloseViolationReportTooSoon,
+
     /// Violation has already been reported
     #[error("Duplicate report")]
     DuplicateReport,
@@ -16,6 +21,10 @@ pub enum SlashingError {
     /// Violation is too old for statute of limitations
     #[error("Exceeds statute of limitations")]
     ExceedsStatuteOfLimitations,
+
+    /// Destination account does not match the key on the report
+    #[error("Invalid destination account")]
+    InvalidDestinationAccount,
 
     /// Invalid shred variant
     #[error("Invalid shred variant")]
