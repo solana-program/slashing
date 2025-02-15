@@ -10,7 +10,7 @@ use {
     solana_program::pubkey::Pubkey,
     solana_program_test::*,
     solana_sdk::{
-        clock::{Clock, Epoch, Slot, DEFAULT_SLOTS_PER_EPOCH},
+        clock::{Clock, Epoch, Slot},
         decode_error::DecodeError,
         ed25519_instruction::SIGNATURE_OFFSETS_START,
         hash::{Hash, HASH_BYTES},
@@ -58,16 +58,6 @@ async fn setup_clock(context: &mut ProgramTestContext) {
     let mut new_clock = clock.clone();
     new_clock.slot = SLOT;
     new_clock.epoch = EPOCH;
-    context.set_sysvar(&new_clock);
-}
-
-async fn increment_clock_epoch(context: &mut ProgramTestContext, increment: Epoch) {
-    let clock: Clock = context.banks_client.get_sysvar().await.unwrap();
-    let mut new_clock = clock.clone();
-    new_clock.slot = new_clock
-        .slot
-        .saturating_add(increment.saturating_mul(DEFAULT_SLOTS_PER_EPOCH));
-    new_clock.epoch = new_clock.epoch.saturating_add(increment);
     context.set_sysvar(&new_clock);
 }
 
@@ -139,9 +129,7 @@ async fn close_report(
     context: &mut ProgramTestContext,
     report_key: Pubkey,
     destination: Pubkey,
-    increment: Epoch,
 ) -> Result<(), BanksClientError> {
-    increment_clock_epoch(context, increment).await;
     let initial_lamports = context
         .banks_client
         .get_account(report_key)
@@ -163,12 +151,6 @@ async fn close_report(
         context.last_blockhash,
     );
 
-    context
-        .banks_client
-        .simulate_transaction(transaction.clone())
-        .await?
-        .result
-        .unwrap()?;
     context
         .banks_client
         .process_transaction(transaction)
@@ -386,7 +368,8 @@ async fn valid_proof_data() {
     assert_eq!(duplicate_proof, proof);
 
     // Close the report
-    close_report(&mut context, report_key, destination, 3)
+    context.warp_to_epoch(EPOCH + 3).unwrap();
+    close_report(&mut context, report_key, destination)
         .await
         .unwrap();
 }
@@ -484,7 +467,8 @@ async fn valid_proof_coding() {
     assert_eq!(duplicate_proof, proof);
 
     // Close the report
-    close_report(&mut context, report_key, destination, 3)
+    context.warp_to_epoch(EPOCH + 3).unwrap();
+    close_report(&mut context, report_key, destination)
         .await
         .unwrap();
 }
@@ -650,12 +634,10 @@ async fn missing_sigverify() {
     );
     let err = context
         .banks_client
-        .simulate_transaction(transaction)
+        .process_transaction(transaction)
         .await
-        .unwrap()
-        .result
-        .unwrap()
-        .unwrap_err();
+        .unwrap_err()
+        .unwrap();
     let TransactionError::InstructionError(0, InstructionError::Custom(code)) = err else {
         panic!("Invalid error {err:?}");
     };
@@ -748,12 +730,10 @@ async fn improper_sigverify() {
     );
     let err = context
         .banks_client
-        .simulate_transaction(transaction)
+        .process_transaction(transaction)
         .await
-        .unwrap()
-        .result
-        .unwrap()
-        .unwrap_err();
+        .unwrap_err()
+        .unwrap();
     let TransactionError::InstructionError(2, InstructionError::Custom(code)) = err else {
         panic!("Invalid error {err:?}");
     };
@@ -1074,7 +1054,7 @@ async fn close_report_destination_and_early() {
     assert_eq!(duplicate_proof, proof);
 
     // Close the report should fail as only 0 epochs have passed
-    let err = close_report(&mut context, report_key, destination, 0)
+    let err = close_report(&mut context, report_key, destination)
         .await
         .unwrap_err()
         .unwrap();
@@ -1085,8 +1065,8 @@ async fn close_report_destination_and_early() {
     assert_eq!(err, SlashingError::CloseViolationReportTooSoon);
 
     // Close the report should fail as only 1 epochs have passed
-    setup_clock(&mut context).await;
-    let err = close_report(&mut context, report_key, destination, 1)
+    context.warp_to_epoch(EPOCH + 1).unwrap();
+    let err = close_report(&mut context, report_key, destination)
         .await
         .unwrap_err()
         .unwrap();
@@ -1097,8 +1077,8 @@ async fn close_report_destination_and_early() {
     assert_eq!(err, SlashingError::CloseViolationReportTooSoon);
 
     // Close the report should fail as only 2 epochs have passed
-    setup_clock(&mut context).await;
-    let err = close_report(&mut context, report_key, destination, 2)
+    context.warp_to_epoch(EPOCH + 2).unwrap();
+    let err = close_report(&mut context, report_key, destination)
         .await
         .unwrap_err()
         .unwrap();
@@ -1109,8 +1089,8 @@ async fn close_report_destination_and_early() {
     assert_eq!(err, SlashingError::CloseViolationReportTooSoon);
 
     // Close report should fail with invalid destination account
-    setup_clock(&mut context).await;
-    let err = close_report(&mut context, report_key, Pubkey::new_unique(), 3)
+    context.warp_to_epoch(EPOCH + 3).unwrap();
+    let err = close_report(&mut context, report_key, Pubkey::new_unique())
         .await
         .unwrap_err()
         .unwrap();
@@ -1121,8 +1101,7 @@ async fn close_report_destination_and_early() {
     assert_eq!(err, SlashingError::InvalidDestinationAccount);
 
     // Close report should succeed with 3+ epochs
-    setup_clock(&mut context).await;
-    close_report(&mut context, report_key, destination, 3)
+    close_report(&mut context, report_key, destination)
         .await
         .unwrap()
 }
