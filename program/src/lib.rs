@@ -1,6 +1,7 @@
 //! Slashing program
 #![deny(missing_docs)]
 
+mod address;
 pub mod duplicate_block_proof;
 mod entrypoint;
 pub mod error;
