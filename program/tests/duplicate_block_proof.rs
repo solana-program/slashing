@@ -61,7 +61,7 @@ async fn setup_clock(context: &mut ProgramTestContext) {
     context.set_sysvar(&new_clock);
 }
 
-async fn increment_clock(context: &mut ProgramTestContext, increment: Epoch) {
+async fn increment_clock_epoch(context: &mut ProgramTestContext, increment: Epoch) {
     let clock: Clock = context.banks_client.get_sysvar().await.unwrap();
     let mut new_clock = clock.clone();
     new_clock.slot = new_clock
@@ -139,10 +139,16 @@ async fn close_report(
     context: &mut ProgramTestContext,
     report_key: Pubkey,
     destination: Pubkey,
-    initial_lamports: u64,
     increment: Epoch,
 ) -> Result<(), BanksClientError> {
-    increment_clock(context, increment).await;
+    increment_clock_epoch(context, increment).await;
+    let initial_lamports = context
+        .banks_client
+        .get_account(report_key)
+        .await
+        .unwrap()
+        .unwrap()
+        .lamports;
     assert!(context
         .banks_client
         .get_account(destination)
@@ -380,15 +386,9 @@ async fn valid_proof_data() {
     assert_eq!(duplicate_proof, proof);
 
     // Close the report
-    close_report(
-        &mut context,
-        report_key,
-        destination,
-        report_account.lamports,
-        3,
-    )
-    .await
-    .unwrap();
+    close_report(&mut context, report_key, destination, 3)
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
@@ -484,15 +484,9 @@ async fn valid_proof_coding() {
     assert_eq!(duplicate_proof, proof);
 
     // Close the report
-    close_report(
-        &mut context,
-        report_key,
-        destination,
-        report_account.lamports,
-        3,
-    )
-    .await
-    .unwrap();
+    close_report(&mut context, report_key, destination, 3)
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
@@ -1050,16 +1044,10 @@ async fn close_report_early() {
     assert_eq!(duplicate_proof, proof);
 
     // Close the report should fail as only 0 epochs have passed
-    let err = close_report(
-        &mut context,
-        report_key,
-        destination,
-        report_account.lamports,
-        0,
-    )
-    .await
-    .unwrap_err()
-    .unwrap();
+    let err = close_report(&mut context, report_key, destination, 0)
+        .await
+        .unwrap_err()
+        .unwrap();
     let TransactionError::InstructionError(0, InstructionError::Custom(code)) = err else {
         panic!("Invalid error {err:?}");
     };
@@ -1068,16 +1056,10 @@ async fn close_report_early() {
 
     // Close the report should fail as only 1 epochs have passed
     setup_clock(&mut context).await;
-    let err = close_report(
-        &mut context,
-        report_key,
-        destination,
-        report_account.lamports,
-        1,
-    )
-    .await
-    .unwrap_err()
-    .unwrap();
+    let err = close_report(&mut context, report_key, destination, 1)
+        .await
+        .unwrap_err()
+        .unwrap();
     let TransactionError::InstructionError(0, InstructionError::Custom(code)) = err else {
         panic!("Invalid error {err:?}");
     };
@@ -1086,16 +1068,10 @@ async fn close_report_early() {
 
     // Close the report should fail as only 2 epochs have passed
     setup_clock(&mut context).await;
-    let err = close_report(
-        &mut context,
-        report_key,
-        destination,
-        report_account.lamports,
-        2,
-    )
-    .await
-    .unwrap_err()
-    .unwrap();
+    let err = close_report(&mut context, report_key, destination, 2)
+        .await
+        .unwrap_err()
+        .unwrap();
     let TransactionError::InstructionError(0, InstructionError::Custom(code)) = err else {
         panic!("Invalid error {err:?}");
     };
@@ -1103,16 +1079,11 @@ async fn close_report_early() {
     assert_eq!(err, SlashingError::CloseViolationReportTooSoon);
 
     // Close report should fail with invalid destination account
-    let err = close_report(
-        &mut context,
-        report_key,
-        Pubkey::new_unique(),
-        report_account.lamports,
-        3,
-    )
-    .await
-    .unwrap_err()
-    .unwrap();
+    setup_clock(&mut context).await;
+    let err = close_report(&mut context, report_key, Pubkey::new_unique(), 3)
+        .await
+        .unwrap_err()
+        .unwrap();
     let TransactionError::InstructionError(0, InstructionError::Custom(code)) = err else {
         panic!("Invalid error {err:?}");
     };
@@ -1121,13 +1092,7 @@ async fn close_report_early() {
 
     // Close report should succeed with 3+ epochs
     setup_clock(&mut context).await;
-    close_report(
-        &mut context,
-        report_key,
-        destination,
-        report_account.lamports,
-        3,
-    )
-    .await
-    .unwrap()
+    close_report(&mut context, report_key, destination, 3)
+        .await
+        .unwrap()
 }

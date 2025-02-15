@@ -167,11 +167,7 @@ pub fn close_violation_report(
         AccountMeta::new(*report_account, false),
         AccountMeta::new(*destination_account, false),
     ];
-    encode_instruction(
-        accounts,
-        SlashingInstruction::CloseViolationReport,
-        &[0u8; 0],
-    )
+    encode_instruction(accounts, SlashingInstruction::CloseViolationReport, &())
 }
 
 /// Create a `SlashingInstruction::DuplicateBlockProof` instruction
