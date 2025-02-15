@@ -280,16 +280,11 @@ where
 pub(crate) fn close_violation_report<'a, 'b>(
     report_account: &'a AccountInfo<'b>,
     destination_account: &'a AccountInfo<'b>,
-    system_program_account: &'a AccountInfo<'b>,
 ) -> Result<(), ProgramError> {
     let report_data = report_account.try_borrow_data()?;
     let report: &ViolationReport =
         pod_from_bytes(&report_data[0..std::mem::size_of::<ViolationReport>()])?;
-    let report_address = ViolationReportAddress::new(report);
-    let report_key = *report_address.key();
     let destination = report.destination;
-
-    debug_assert_eq!(*report_account.key, report_key);
 
     if Epoch::from(report.epoch).saturating_add(3) > sysvar::clock::Clock::get()?.epoch {
         return Err(ProgramError::from(
@@ -301,9 +296,7 @@ pub(crate) fn close_violation_report<'a, 'b>(
         return Err(ProgramError::from(SlashingError::InvalidDestinationAccount));
     }
 
-    // Copy seeds and drop as we will modify the report account
-    let seeds = report_address.seeds_owned();
-    let seeds: Vec<&[u8]> = seeds.iter().map(|seed| &seed[..]).collect();
+    // Drop the report account to close it
     drop(report_data);
 
     // Reallocate the account to 0 bytes
@@ -313,21 +306,17 @@ pub(crate) fn close_violation_report<'a, 'b>(
     report_account.assign(&system_program::id());
 
     // Transfer the lamports to the destination address
-    let lamports = report_account.lamports();
-    let transfer_instruction = system_instruction::transfer(&report_key, &destination, lamports);
-    invoke_signed(
-        &transfer_instruction,
-        &[
-            report_account.clone(),
-            destination_account.clone(),
-            system_program_account.clone(),
-        ],
-        &[&seeds],
-    )?;
+    let report_lamports = report_account.lamports();
+    **report_account.try_borrow_mut_lamports()? = 0;
+
+    let destination_lamports = destination_account.lamports();
+    **(destination_account.try_borrow_mut_lamports()?) = destination_lamports
+        .checked_add(report_lamports)
+        .ok_or(ProgramError::ArithmeticOverflow)?;
 
     msg!(
         "Closed violation report and credited {} lamports to the destination address",
-        lamports
+        report_lamports
     );
     Ok(())
 }

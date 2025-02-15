@@ -20,7 +20,6 @@ use {
         msg,
         program_error::ProgramError,
         pubkey::Pubkey,
-        system_program,
         sysvar::{clock::Clock, epoch_schedule::EpochSchedule, Sysvar},
     },
 };
@@ -71,20 +70,14 @@ pub fn process_instruction(
         SlashingInstruction::CloseViolationReport => {
             let report_account = next_account_info(account_info_iter)?;
             let destination_account = next_account_info(account_info_iter)?;
-            let system_program_account = next_account_info(account_info_iter)?;
 
             if !check_id(report_account.owner) || report_account.data_is_empty() {
                 return Err(ProgramError::from(
                     SlashingError::InvalidViolationReportAcccount,
                 ));
             }
-            if !system_program::check_id(system_program_account.key) {
-                return Err(ProgramError::from(
-                    SlashingError::MissingSystemProgramAccount,
-                ));
-            }
 
-            close_violation_report(report_account, destination_account, system_program_account)?;
+            close_violation_report(report_account, destination_account)?;
         }
         SlashingInstruction::DuplicateBlockProof => {
             let accounts = SlashingAccounts::new(account_info_iter)?;

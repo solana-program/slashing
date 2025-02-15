@@ -75,13 +75,4 @@ impl<'a> ViolationReportAddress<'a> {
             &self.bump_seed,
         ]
     }
-
-    pub(crate) fn seeds_owned(&self) -> [Vec<u8>; 4] {
-        [
-            self.pubkey_seed.to_owned(),
-            Vec::from(self.slot_seed),
-            Vec::from(self.violation_seed),
-            Vec::from(self.bump_seed),
-        ]
-    }
 }

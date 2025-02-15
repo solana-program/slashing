@@ -41,7 +41,6 @@ pub enum SlashingInstruction {
     ///    `[get_violation_report_address]` for the address derivation.
     /// 1. `[WRITE]` Destination account which will be credited the lamports
     ///    from the PDA.
-    /// 2. `[]` System program
     CloseViolationReport,
 
     /// Submit a slashable violation proof for `node_pubkey`, which indicates
@@ -167,7 +166,6 @@ pub fn close_violation_report(
     let accounts = vec![
         AccountMeta::new(*report_account, false),
         AccountMeta::new(*destination_account, false),
-        AccountMeta::new_readonly(system_program::id(), false),
     ];
     encode_instruction(
         accounts,
