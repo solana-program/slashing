@@ -249,6 +249,12 @@ where
         return Err(ProgramError::from(SlashingError::DuplicateReport));
     }
 
+    if *report_key == report.destination {
+        return Err(ProgramError::from(
+            SlashingError::DestinationAddressIsReportAccount,
+        ));
+    }
+
     // Check if the account has been prefunded to store the report
     let data_len = ViolationReport::packed_len(&proof_data);
     let lamports = Rent::get()?.minimum_balance(data_len);

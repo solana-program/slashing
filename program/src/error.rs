@@ -14,6 +14,10 @@ pub enum SlashingError {
     #[error("Closing violation report too soon")]
     CloseViolationReportTooSoon,
 
+    /// Destination address is the report account itself
+    #[error("Destination address is the report account")]
+    DestinationAddressIsReportAccount,
+
     /// Violation has already been reported
     #[error("Duplicate report")]
     DuplicateReport,

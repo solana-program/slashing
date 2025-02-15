@@ -954,7 +954,7 @@ async fn double_report() {
 }
 
 #[tokio::test]
-async fn close_report_early() {
+async fn close_report_destination_and_early() {
     let mut context = program_test().start_with_context().await;
     setup_clock(&mut context).await;
 
@@ -986,6 +986,44 @@ async fn close_report_early() {
     initialize_duplicate_proof_account(&mut context, &authority, &account).await;
     write_proof(&mut context, &authority, &account, &data).await;
 
+    let (report_key, _) = Pubkey::find_program_address(
+        &[
+            &leader.pubkey().to_bytes(),
+            &slot.to_le_bytes(),
+            &[u8::from(ProofType::DuplicateBlockProof)],
+        ],
+        &spl_slashing::id(),
+    );
+
+    // Trying to create an account with the destination set to the report account
+    // should fail
+    let transaction = Transaction::new_signed_with_payer(
+        &slashing_instructions(
+            &reporter,
+            &report_key,
+            &account.pubkey(),
+            slot,
+            leader.pubkey(),
+            &shred1,
+            &shred2,
+        ),
+        Some(&context.payer.pubkey()),
+        &[&context.payer],
+        context.last_blockhash,
+    );
+    let err = context
+        .banks_client
+        .process_transaction(transaction)
+        .await
+        .unwrap_err()
+        .unwrap();
+    let TransactionError::InstructionError(2, InstructionError::Custom(code)) = err else {
+        panic!("Invalid error {err:?}");
+    };
+    let err: SlashingError = SlashingError::decode_custom_error_to_enum(code).unwrap();
+    assert_eq!(err, SlashingError::DestinationAddressIsReportAccount);
+
+    // Use a proper destination account
     let transaction = Transaction::new_signed_with_payer(
         &slashing_instructions(
             &reporter,
@@ -1007,14 +1045,6 @@ async fn close_report_early() {
         .unwrap();
 
     // Verify that the report was written
-    let (report_key, _) = Pubkey::find_program_address(
-        &[
-            &leader.pubkey().to_bytes(),
-            &slot.to_le_bytes(),
-            &[u8::from(ProofType::DuplicateBlockProof)],
-        ],
-        &spl_slashing::id(),
-    );
     let report_account = context
         .banks_client
         .get_account(report_key)
