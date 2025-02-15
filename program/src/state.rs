@@ -1,8 +1,8 @@
 //! Program state
 use {
     crate::{
-        check_id, duplicate_block_proof::DuplicateBlockProofData, error::SlashingError, id,
-        ViolationReportAddress,
+        address::ViolationReportAddress, check_id, duplicate_block_proof::DuplicateBlockProofData,
+        error::SlashingError, id,
     },
     bytemuck::{Pod, Zeroable},
     solana_program::{
