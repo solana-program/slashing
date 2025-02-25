@@ -10,7 +10,7 @@ use {
     solana_program::pubkey::Pubkey,
     solana_program_test::*,
     solana_sdk::{
-        clock::{Clock, Slot},
+        clock::{Clock, Epoch, Slot},
         decode_error::DecodeError,
         ed25519_instruction::SIGNATURE_OFFSETS_START,
         hash::{Hash, HASH_BYTES},
@@ -31,7 +31,8 @@ use {
         error::SlashingError,
         id,
         instruction::{
-            duplicate_block_proof_with_sigverify_and_prefund, DuplicateBlockProofInstructionData,
+            close_violation_report, duplicate_block_proof_with_sigverify_and_prefund,
+            DuplicateBlockProofInstructionData,
         },
         processor::process_instruction,
         state::{ProofType, SlashingProofData, ViolationReport},
@@ -40,7 +41,7 @@ use {
 };
 
 const SLOT: Slot = 53084024;
-const EPOCH: Slot = 42;
+const EPOCH: Epoch = 42;
 
 fn program_test() -> ProgramTest {
     let mut program_test = ProgramTest::new("spl_slashing", id(), processor!(process_instruction));
@@ -122,6 +123,56 @@ async fn write_proof(
 
         offset = offset.checked_add(chunk_size).unwrap();
     }
+}
+
+async fn close_report(
+    context: &mut ProgramTestContext,
+    report_key: Pubkey,
+    destination: Pubkey,
+) -> Result<(), BanksClientError> {
+    let initial_lamports = context
+        .banks_client
+        .get_account(report_key)
+        .await
+        .unwrap()
+        .unwrap()
+        .lamports;
+    assert!(context
+        .banks_client
+        .get_account(destination)
+        .await
+        .unwrap()
+        .is_none());
+
+    let transaction = Transaction::new_signed_with_payer(
+        &[close_violation_report(&report_key, &destination)],
+        Some(&context.payer.pubkey()),
+        &[&context.payer],
+        context.last_blockhash,
+    );
+
+    context
+        .banks_client
+        .process_transaction(transaction)
+        .await?;
+
+    let new_lamports = context
+        .banks_client
+        .get_account(destination)
+        .await
+        .unwrap()
+        .unwrap()
+        .lamports;
+
+    assert!(context
+        .banks_client
+        .get_account(report_key)
+        .await
+        .unwrap()
+        .is_none());
+    assert_eq!(new_lamports, initial_lamports);
+
+    Ok(())
 }
 
 fn slashing_instructions(
@@ -281,7 +332,7 @@ async fn valid_proof_data() {
         .unwrap();
 
     // Verify that the report was written
-    let (report_account, _) = Pubkey::find_program_address(
+    let (report_key, _) = Pubkey::find_program_address(
         &[
             &leader.pubkey().to_bytes(),
             &slot.to_le_bytes(),
@@ -291,7 +342,7 @@ async fn valid_proof_data() {
     );
     let report_account = context
         .banks_client
-        .get_account(report_account)
+        .get_account(report_key)
         .await
         .unwrap()
         .unwrap();
@@ -315,6 +366,12 @@ async fn valid_proof_data() {
         DuplicateBlockProofData::unpack_proof(&report_account.data[violation_report_size..])
             .unwrap();
     assert_eq!(duplicate_proof, proof);
+
+    // Close the report
+    context.warp_to_epoch(EPOCH + 3).unwrap();
+    close_report(&mut context, report_key, destination)
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
@@ -373,7 +430,7 @@ async fn valid_proof_coding() {
         .unwrap();
 
     // Verify that the report was written
-    let (report_account, _) = Pubkey::find_program_address(
+    let (report_key, _) = Pubkey::find_program_address(
         &[
             &leader.pubkey().to_bytes(),
             &slot.to_le_bytes(),
@@ -383,7 +440,7 @@ async fn valid_proof_coding() {
     );
     let report_account = context
         .banks_client
-        .get_account(report_account)
+        .get_account(report_key)
         .await
         .unwrap()
         .unwrap();
@@ -408,6 +465,12 @@ async fn valid_proof_coding() {
         DuplicateBlockProofData::unpack_proof(&report_account.data[violation_report_size..])
             .unwrap();
     assert_eq!(duplicate_proof, proof);
+
+    // Close the report
+    context.warp_to_epoch(EPOCH + 3).unwrap();
+    close_report(&mut context, report_key, destination)
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
@@ -868,4 +931,177 @@ async fn double_report() {
         pod_from_bytes(&report_account.data[0..violation_report_size]).unwrap();
 
     assert_eq!(*violation_report, expected_violation_report);
+}
+
+#[tokio::test]
+async fn close_report_destination_and_early() {
+    let mut context = program_test().start_with_context().await;
+    setup_clock(&mut context).await;
+
+    let authority = Keypair::new();
+    let account = Keypair::new();
+    let reporter = context.payer.pubkey();
+    let destination = Pubkey::new_unique();
+
+    let mut rng = rand::rng();
+    let leader = Arc::new(Keypair::new());
+    let (slot, parent_slot, reference_tick, version) = (SLOT, 53084023, 0, 0);
+    let shredder = Shredder::new(slot, parent_slot, reference_tick, version).unwrap();
+    let next_shred_index = rng.random_range(0..32_000);
+    let shred1 = new_rand_data_shred(&mut rng, next_shred_index, &shredder, &leader, true);
+    let shred2 = new_rand_data_shred(&mut rng, next_shred_index, &shredder, &leader, true);
+
+    assert_ne!(
+        shred1.merkle_root().unwrap(),
+        shred2.merkle_root().unwrap(),
+        "Expecting merkle root conflict",
+    );
+
+    let duplicate_proof = DuplicateBlockProofData {
+        shred1: shred1.payload().as_ref(),
+        shred2: shred2.payload().as_ref(),
+    };
+    let data = duplicate_proof.pack_proof();
+
+    initialize_duplicate_proof_account(&mut context, &authority, &account).await;
+    write_proof(&mut context, &authority, &account, &data).await;
+
+    let (report_key, _) = Pubkey::find_program_address(
+        &[
+            &leader.pubkey().to_bytes(),
+            &slot.to_le_bytes(),
+            &[u8::from(ProofType::DuplicateBlockProof)],
+        ],
+        &spl_slashing::id(),
+    );
+
+    // Trying to create an account with the destination set to the report account
+    // should fail
+    let transaction = Transaction::new_signed_with_payer(
+        &slashing_instructions(
+            &reporter,
+            &report_key,
+            &account.pubkey(),
+            slot,
+            leader.pubkey(),
+            &shred1,
+            &shred2,
+        ),
+        Some(&context.payer.pubkey()),
+        &[&context.payer],
+        context.last_blockhash,
+    );
+    let err = context
+        .banks_client
+        .process_transaction(transaction)
+        .await
+        .unwrap_err()
+        .unwrap();
+    let TransactionError::InstructionError(2, InstructionError::Custom(code)) = err else {
+        panic!("Invalid error {err:?}");
+    };
+    let err: SlashingError = SlashingError::decode_custom_error_to_enum(code).unwrap();
+    assert_eq!(err, SlashingError::DestinationAddressIsReportAccount);
+
+    // Use a proper destination account
+    let transaction = Transaction::new_signed_with_payer(
+        &slashing_instructions(
+            &reporter,
+            &destination,
+            &account.pubkey(),
+            slot,
+            leader.pubkey(),
+            &shred1,
+            &shred2,
+        ),
+        Some(&context.payer.pubkey()),
+        &[&context.payer],
+        context.last_blockhash,
+    );
+    context
+        .banks_client
+        .process_transaction(transaction)
+        .await
+        .unwrap();
+
+    // Verify that the report was written
+    let report_account = context
+        .banks_client
+        .get_account(report_key)
+        .await
+        .unwrap()
+        .unwrap();
+    let violation_report_size = std::mem::size_of::<ViolationReport>();
+    let violation_report: &ViolationReport =
+        pod_from_bytes(&report_account.data[0..violation_report_size]).unwrap();
+
+    let expected_violation_report = ViolationReport {
+        version: ViolationReport::VERSION,
+        reporter,
+        destination,
+        epoch: PodU64::from(EPOCH),
+        pubkey: leader.pubkey(),
+        slot: PodU64::from(slot),
+        violation_type: ProofType::DuplicateBlockProof.into(),
+        proof_account: account.pubkey(),
+    };
+    assert_eq!(*violation_report, expected_violation_report);
+
+    // Verify that the proof was also serialized to the account
+    let proof =
+        DuplicateBlockProofData::unpack_proof(&report_account.data[violation_report_size..])
+            .unwrap();
+    assert_eq!(duplicate_proof, proof);
+
+    // Close the report should fail as only 0 epochs have passed
+    let err = close_report(&mut context, report_key, destination)
+        .await
+        .unwrap_err()
+        .unwrap();
+    let TransactionError::InstructionError(0, InstructionError::Custom(code)) = err else {
+        panic!("Invalid error {err:?}");
+    };
+    let err: SlashingError = SlashingError::decode_custom_error_to_enum(code).unwrap();
+    assert_eq!(err, SlashingError::CloseViolationReportTooSoon);
+
+    // Close the report should fail as only 1 epochs have passed
+    context.warp_to_epoch(EPOCH + 1).unwrap();
+    let err = close_report(&mut context, report_key, destination)
+        .await
+        .unwrap_err()
+        .unwrap();
+    let TransactionError::InstructionError(0, InstructionError::Custom(code)) = err else {
+        panic!("Invalid error {err:?}");
+    };
+    let err: SlashingError = SlashingError::decode_custom_error_to_enum(code).unwrap();
+    assert_eq!(err, SlashingError::CloseViolationReportTooSoon);
+
+    // Close the report should fail as only 2 epochs have passed
+    context.warp_to_epoch(EPOCH + 2).unwrap();
+    let err = close_report(&mut context, report_key, destination)
+        .await
+        .unwrap_err()
+        .unwrap();
+    let TransactionError::InstructionError(0, InstructionError::Custom(code)) = err else {
+        panic!("Invalid error {err:?}");
+    };
+    let err: SlashingError = SlashingError::decode_custom_error_to_enum(code).unwrap();
+    assert_eq!(err, SlashingError::CloseViolationReportTooSoon);
+
+    // Close report should fail with invalid destination account
+    context.warp_to_epoch(EPOCH + 3).unwrap();
+    let err = close_report(&mut context, report_key, Pubkey::new_unique())
+        .await
+        .unwrap_err()
+        .unwrap();
+    let TransactionError::InstructionError(0, InstructionError::Custom(code)) = err else {
+        panic!("Invalid error {err:?}");
+    };
+    let err: SlashingError = SlashingError::decode_custom_error_to_enum(code).unwrap();
+    assert_eq!(err, SlashingError::InvalidDestinationAccount);
+
+    // Close report should succeed with 3+ epochs
+    close_report(&mut context, report_key, destination)
+        .await
+        .unwrap()
 }

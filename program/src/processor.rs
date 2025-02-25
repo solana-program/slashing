@@ -2,6 +2,7 @@
 
 use {
     crate::{
+        check_id,
         duplicate_block_proof::DuplicateBlockProofData,
         error::SlashingError,
         instruction::{
@@ -9,12 +10,12 @@ use {
             SlashingInstruction,
         },
         state::{
-            store_violation_report, PodEpoch, ProofType, SlashingAccounts, SlashingProofData,
-            ViolationReport,
+            close_violation_report, store_violation_report, PodEpoch, ProofType, SlashingAccounts,
+            SlashingProofData, ViolationReport,
         },
     },
     solana_program::{
-        account_info::AccountInfo,
+        account_info::{next_account_info, AccountInfo},
         entrypoint::ProgramResult,
         msg,
         program_error::ProgramError,
@@ -65,9 +66,21 @@ pub fn process_instruction(
 ) -> ProgramResult {
     let instruction_type = decode_instruction_type(input)?;
     let account_info_iter = &mut accounts.iter();
-    let accounts = SlashingAccounts::new(account_info_iter)?;
     match instruction_type {
+        SlashingInstruction::CloseViolationReport => {
+            let report_account = next_account_info(account_info_iter)?;
+            let destination_account = next_account_info(account_info_iter)?;
+
+            if !check_id(report_account.owner) || report_account.data_is_empty() {
+                return Err(ProgramError::from(
+                    SlashingError::InvalidViolationReportAcccount,
+                ));
+            }
+
+            close_violation_report(report_account, destination_account)?;
+        }
         SlashingInstruction::DuplicateBlockProof => {
+            let accounts = SlashingAccounts::new(account_info_iter)?;
             let data = decode_instruction_data::<DuplicateBlockProofInstructionData>(input)?;
             let proof_data = &accounts.proof_account.try_borrow_data()?[data.offset()?..];
             let violation_report = ViolationReport {
@@ -86,9 +99,9 @@ pub fn process_instruction(
                 proof_data,
                 input,
             )?;
-            Ok(())
         }
     }
+    Ok(())
 }
 
 #[cfg(test)]
