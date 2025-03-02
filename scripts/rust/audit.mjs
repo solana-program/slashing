@@ -20,6 +20,15 @@ const advisories = [
   // URL:       https://rustsec.org/advisories/RUSTSEC-2024-0376
   // Solution:  Upgrade to >=0.12.3
   'RUSTSEC-2024-0376',
+
+  // Crate:     idna
+  // Version:   0.1.5
+  // Title:     `idna` accepts Punycode labels that do not produce any non-ASCII when decoded
+  // Date:      2024-12-09
+  // ID:        RUSTSEC-2024-0421
+  // URL:       https://rustsec.org/advisories/RUSTSEC-2024-0421
+  // Solution:  Upgrade to >=1.0.0
+  'RUSTSEC-2024-0421'
 ];
 const ignores = []
 advisories.forEach(x => {
