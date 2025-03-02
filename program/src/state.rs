@@ -135,10 +135,6 @@ impl<'a, 'b> SlashingAccounts<'a, 'b> {
         Ok(res)
     }
 
-    pub(crate) fn proof_account(&self) -> &Pubkey {
-        self.proof_account.key
-    }
-
     fn violation_account(&self) -> &Pubkey {
         self.violation_pda_account.key
     }
@@ -167,7 +163,7 @@ impl<'a, 'b> SlashingAccounts<'a, 'b> {
 }
 
 /// On chain proof report of a slashable violation
-/// The report account will contain this optionally followed by the
+/// The report account will contain this followed by the
 /// serialized proof
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable, PartialEq)]
@@ -186,8 +182,6 @@ pub struct ViolationReport {
     pub slot: PodSlot,
     /// Discriminant of `ProofType` representing the violation type
     pub violation_type: u8,
-    /// Account where the proof is stored
-    pub proof_account: Pubkey,
 }
 
 impl ViolationReport {

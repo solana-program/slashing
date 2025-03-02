@@ -91,7 +91,6 @@ pub fn process_instruction(
                 pubkey: data.node_pubkey,
                 slot: data.slot,
                 violation_type: u8::from(ProofType::DuplicateBlockProof),
-                proof_account: *accounts.proof_account(),
             };
             verify_proof_data::<DuplicateBlockProofData>(
                 violation_report,
@@ -274,7 +273,6 @@ mod tests {
             pubkey: leader.pubkey(),
             slot: PodU64::from(SLOT),
             violation_type: u8::from(ProofType::DuplicateBlockProof),
-            proof_account: Pubkey::new_unique(),
         };
 
         verify_proof_data::<DuplicateBlockProofData>(
