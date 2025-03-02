@@ -198,6 +198,7 @@ fn slashing_instructions(
     duplicate_block_proof_with_sigverify_and_prefund(
         proof_account,
         &instruction_data,
+        None,
         &Rent::default(),
     )
 }

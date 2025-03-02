@@ -199,6 +199,9 @@ pub fn duplicate_block_proof(
 /// verification and the `SlashingInstruction::DuplicateBlockProof` in the
 /// expected format.
 ///
+/// If specified, the `funder` will prefund the report account, otherwise the
+/// `reporter` will be used.
+///
 /// `sigverify_data` should equal the `(shredx.merkle_root, shredx.signature)`
 /// specified in the proof account
 ///
@@ -208,6 +211,7 @@ pub fn duplicate_block_proof(
 pub fn duplicate_block_proof_with_sigverify_and_prefund(
     proof_account: &Pubkey,
     instruction_data: &DuplicateBlockProofInstructionData,
+    funder: Option<&Pubkey>,
     rent: &Rent,
 ) -> [Instruction; 3] {
     let slashing_ix = duplicate_block_proof(proof_account, instruction_data);
@@ -247,7 +251,8 @@ pub fn duplicate_block_proof_with_sigverify_and_prefund(
         ProofType::DuplicateBlockProof,
     );
     let lamports = rent.minimum_balance(ViolationReport::size::<DuplicateBlockProofData>());
-    let transfer_ix = system_instruction::transfer(&instruction_data.reporter, &pda, lamports);
+    let transfer_ix =
+        system_instruction::transfer(funder.unwrap_or(&instruction_data.reporter), &pda, lamports);
 
     [transfer_ix, sigverify_ix, slashing_ix]
 }
@@ -276,6 +281,7 @@ pub(crate) fn construct_instructions_and_sysvar(
     let instructions = duplicate_block_proof_with_sigverify_and_prefund(
         &Pubkey::new_unique(),
         instruction_data,
+        None,
         &Rent::default(),
     );
     let borrowed_instructions: Vec<BorrowedInstruction> =
