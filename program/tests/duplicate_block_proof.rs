@@ -357,7 +357,6 @@ async fn valid_proof_data() {
         pubkey: leader.pubkey(),
         slot: PodU64::from(slot),
         violation_type: ProofType::DuplicateBlockProof.into(),
-        proof_account: account.pubkey(),
     };
     assert_eq!(*violation_report, expected_violation_report);
 
@@ -456,7 +455,6 @@ async fn valid_proof_coding() {
         pubkey: leader.pubkey(),
         slot: PodU64::from(slot),
         violation_type: ProofType::DuplicateBlockProof.into(),
-        proof_account: account.pubkey(),
     };
     assert_eq!(*violation_report, expected_violation_report);
 
@@ -856,7 +854,6 @@ async fn double_report() {
         pubkey: leader.pubkey(),
         slot: PodU64::from(slot),
         violation_type: ProofType::DuplicateBlockProof.into(),
-        proof_account: account.pubkey(),
     };
     assert_eq!(*violation_report, expected_violation_report);
 
@@ -1043,7 +1040,6 @@ async fn close_report_destination_and_early() {
         pubkey: leader.pubkey(),
         slot: PodU64::from(slot),
         violation_type: ProofType::DuplicateBlockProof.into(),
-        proof_account: account.pubkey(),
     };
     assert_eq!(*violation_report, expected_violation_report);
 
