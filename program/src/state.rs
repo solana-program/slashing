@@ -17,6 +17,7 @@ use {
         sysvar::{self, Sysvar},
     },
     spl_pod::{bytemuck::pod_from_bytes, primitives::PodU64},
+    std::{fmt::Display, str::FromStr},
 };
 
 const PACKET_DATA_SIZE: usize = 1232;
@@ -51,6 +52,26 @@ impl ProofType {
         match self {
             Self::InvalidType => "invalid",
             Self::DuplicateBlockProof => "duplicate block",
+        }
+    }
+}
+
+impl Display for ProofType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.violation_str())
+    }
+}
+
+impl FromStr for ProofType {
+    type Err = std::fmt::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s == Self::DuplicateBlockProof.violation_str() {
+            Ok(Self::DuplicateBlockProof)
+        } else if s == Self::InvalidType.violation_str() {
+            Ok(Self::InvalidType)
+        } else {
+            Err(Self::Err {})
         }
     }
 }
@@ -203,6 +224,21 @@ impl ViolationReport {
     /// of a proof for `T`
     pub const fn size<'a, T: SlashingProofData<'a>>() -> usize {
         std::mem::size_of::<ViolationReport>().saturating_add(T::PROOF_TYPE.proof_account_length())
+    }
+
+    /// The epoch in which this report was created
+    pub fn epoch(&self) -> Epoch {
+        Epoch::from(self.epoch)
+    }
+
+    /// The slot in which the violation occurred
+    pub fn slot(&self) -> Slot {
+        Slot::from(self.slot)
+    }
+
+    /// The type of violation that occurred
+    pub fn violation_type(&self) -> ProofType {
+        ProofType::from(self.violation_type)
     }
 }
 
