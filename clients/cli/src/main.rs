@@ -114,14 +114,26 @@ async fn command_attach(
         bincode::deserialize(&config.rpc_client.get_account_data(&Rent::id()).await?).unwrap();
     let payer = config.fee_payer()?;
     let reporter = get_pubkey_from_source!(command_config, matches, wallet_manager, reporter)?
-        .ok_or(Error::from("Reporter or default signer was not specified"))
-        .or(config.default_signer().map(|s| s.pubkey()))?;
+        .map_or_else(
+            || {
+                config
+                    .default_signer()
+                    .map(|s| s.pubkey())
+                    .map_err(|_| Error::from("Reporter or default signer was not specified"))
+            },
+            Ok,
+        )?;
     let destination =
         get_pubkey_from_source!(command_config, matches, wallet_manager, destination)?
-            .ok_or(Error::from(
-                "Destination or default signer was not specified",
-            ))
-            .or(config.default_signer().map(|s| s.pubkey()))?;
+            .map_or_else(
+                || {
+                    config
+                        .default_signer()
+                        .map(|s| s.pubkey())
+                        .map_err(|_| Error::from("Destination or default signer was not specified"))
+                },
+                Ok,
+            )?;
 
     let ledger_path = PathBuf::from(command_config.ledger);
     let ledger_path = std::fs::canonicalize(&ledger_path).map_err(|err| {
