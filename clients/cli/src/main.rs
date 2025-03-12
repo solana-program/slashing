@@ -169,7 +169,7 @@ async fn command_attach(
 
         for slot in blockstore.duplicate_slots_iterator(starting_slot)? {
             if slot > command_config.end_slot.unwrap_or(u64::MAX) {
-                continue;
+                break;
             }
 
             println_display(config, format!("\nDuplicate proof found for slot {}", slot));
