@@ -8,7 +8,6 @@ use {
     solana_sdk::{
         commitment_config::CommitmentConfig, rent::Rent, signature::Signer, sysvar::SysvarId,
     },
-    spl_token_client::client::{ProgramClient, ProgramRpcClient, ProgramRpcClientSendTransaction},
     std::{process::exit, rc::Rc, sync::Arc},
 };
 
@@ -34,7 +33,6 @@ pub fn eprintln_display(config: &Config, message: String) {
 
 pub struct Config {
     pub rpc_client: Arc<RpcClient>,
-    pub program_client: Arc<dyn ProgramClient<ProgramRpcClientSendTransaction>>,
     pub default_signer: Option<Arc<dyn Signer>>,
     pub fee_payer: Option<Arc<dyn Signer>>,
     pub output_format: OutputFormat,
@@ -65,12 +63,6 @@ impl Config {
             CommitmentConfig::confirmed(),
         ));
 
-        // and program client
-        let program_client = Arc::new(ProgramRpcClient::new(
-            rpc_client.clone(),
-            ProgramRpcClientSendTransaction,
-        ));
-
         // resolve default signer
         let default_path = cli_config.keypair_path;
         let default_signer = signer_from_path(&matches, &default_path, "default", wallet_manager)
@@ -99,7 +91,6 @@ impl Config {
 
         Self {
             rpc_client,
-            program_client,
             default_signer,
             fee_payer,
             output_format,

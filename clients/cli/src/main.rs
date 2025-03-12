@@ -187,7 +187,7 @@ async fn command_attach(
                 &[close_ix],
                 Some(&payer.pubkey()),
                 &[payer.clone(), proof_account],
-                config.program_client.get_latest_blockhash().await?,
+                config.rpc_client.get_latest_blockhash().await?,
             );
             if process_transaction(config, transaction).await?.is_some() {
                 println_display(config, "Closed proof account".to_string());
@@ -286,7 +286,7 @@ async fn report_duplicate_block_violation(
         &instructions,
         Some(&payer.pubkey()),
         &[payer.as_ref()],
-        config.program_client.get_latest_blockhash().await?,
+        config.rpc_client.get_latest_blockhash().await?,
     );
     if let Some(_signature) = process_transaction(config, transaction).await? {
         let report_account = config.rpc_client.get_account(&pda).await?;
@@ -369,7 +369,7 @@ async fn command_close(
             &[close_ix],
             Some(&payer.pubkey()),
             &[payer.as_ref()],
-            config.program_client.get_latest_blockhash().await?,
+            config.rpc_client.get_latest_blockhash().await?,
         );
         let signature = process_transaction(config, transaction).await?;
 
@@ -479,7 +479,7 @@ async fn initialize_and_write_proof(
         ],
         Some(&payer.pubkey()),
         &signers,
-        config.program_client.get_latest_blockhash().await?,
+        config.rpc_client.get_latest_blockhash().await?,
     );
     if process_transaction(config, transaction).await?.is_some() {
         println_display(
@@ -505,7 +505,7 @@ async fn initialize_and_write_proof(
             &[write_ix],
             Some(&payer.pubkey()),
             &[&**payer],
-            config.program_client.get_latest_blockhash().await?,
+            config.rpc_client.get_latest_blockhash().await?,
         );
         writes.push(process_transaction(config, transaction));
         offset = offset.checked_add(chunk_size).unwrap();
