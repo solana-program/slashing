@@ -21,11 +21,6 @@ use {
         transaction::{Transaction, TransactionError},
     },
     solana_signature::SIGNATURE_BYTES,
-    spl_pod::{
-        bytemuck::{pod_from_bytes, pod_get_packed_len},
-        primitives::PodU64,
-    },
-    spl_record::{instruction as record, state::RecordData},
     solana_slashing_program::{
         duplicate_block_proof::DuplicateBlockProofData,
         error::SlashingError,
@@ -37,6 +32,11 @@ use {
         processor::process_instruction,
         state::{ProofType, SlashingProofData, ViolationReport},
     },
+    spl_pod::{
+        bytemuck::{pod_from_bytes, pod_get_packed_len},
+        primitives::PodU64,
+    },
+    spl_record::{instruction as record, state::RecordData},
     std::{assert_ne, sync::Arc},
 };
 
@@ -44,7 +44,11 @@ const SLOT: Slot = 53084024;
 const EPOCH: Epoch = 42;
 
 fn program_test() -> ProgramTest {
-    let mut program_test = ProgramTest::new("solana_slashing_program", id(), processor!(process_instruction));
+    let mut program_test = ProgramTest::new(
+        "solana_slashing_program",
+        id(),
+        processor!(process_instruction),
+    );
     program_test.add_program(
         "spl_record",
         spl_record::id(),

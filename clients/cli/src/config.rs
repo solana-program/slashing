@@ -5,9 +5,7 @@ use {
     solana_cli_output::OutputFormat,
     solana_client::nonblocking::rpc_client::RpcClient,
     solana_remote_wallet::remote_wallet::RemoteWalletManager,
-    solana_sdk::{
-        commitment_config::CommitmentConfig, rent::Rent, signature::Signer, sysvar::SysvarId,
-    },
+    solana_sdk::{commitment_config::CommitmentConfig, signature::Signer},
     std::{process::exit, rc::Rc, sync::Arc},
 };
 
@@ -37,7 +35,6 @@ pub struct Config {
     pub fee_payer: Option<Arc<dyn Signer>>,
     pub output_format: OutputFormat,
     pub dry_run: bool,
-    pub rent: Rent,
 }
 impl Config {
     pub async fn new(
@@ -85,17 +82,12 @@ impl Config {
             (None, false) => OutputFormat::Display,
         };
 
-        // get rent
-        let rent =
-            bincode::deserialize(&rpc_client.get_account_data(&Rent::id()).await.unwrap()).unwrap();
-
         Self {
             rpc_client,
             default_signer,
             fee_payer,
             output_format,
             dry_run: cli.dry_run,
-            rent,
         }
     }
 

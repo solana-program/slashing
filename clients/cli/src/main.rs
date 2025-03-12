@@ -16,14 +16,11 @@ use {
         account::ReadableAccount,
         clock::Slot,
         pubkey::Pubkey,
+        rent::Rent,
         signature::{Keypair, Signature, Signer, SIGNATURE_BYTES},
+        sysvar::SysvarId,
         transaction::Transaction,
     },
-    spl_pod::{
-        bytemuck::{pod_from_bytes, pod_get_packed_len},
-        primitives::PodU64,
-    },
-    spl_record::state::RecordData,
     solana_slashing_program::{
         duplicate_block_proof::DuplicateBlockProofData,
         get_violation_report_address,
@@ -33,6 +30,11 @@ use {
         },
         state::{ProofType, SlashingProofData, ViolationReport},
     },
+    spl_pod::{
+        bytemuck::{pod_from_bytes, pod_get_packed_len},
+        primitives::PodU64,
+    },
+    spl_record::state::RecordData,
     std::{path::PathBuf, rc::Rc, sync::Arc, time::Duration},
 };
 
@@ -108,6 +110,8 @@ async fn command_attach(
     matches: &ArgMatches,
     wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
 ) -> CommandResult {
+    let rent =
+        bincode::deserialize(&config.rpc_client.get_account_data(&Rent::id()).await?).unwrap();
     let payer = config.fee_payer()?;
     let reporter = get_pubkey_from_source!(command_config, matches, wallet_manager, reporter)?
         .ok_or(Error::from("Reporter or default signer was not specified"))
@@ -161,8 +165,8 @@ async fn command_attach(
             match report_duplicate_block_violation(
                 config,
                 &blockstore,
+                &rent,
                 &mut closable_proof_accounts,
-                &payer,
                 reporter,
                 destination,
                 slot,
@@ -209,8 +213,8 @@ async fn command_attach(
 async fn report_duplicate_block_violation(
     config: &Config,
     blockstore: &Blockstore,
+    rent: &Rent,
     closable_proof_accounts: &mut Vec<Arc<Keypair>>,
-    payer: &Arc<dyn Signer>,
     reporter: Pubkey,
     destination: Pubkey,
     slot: Slot,
@@ -252,14 +256,15 @@ async fn report_duplicate_block_violation(
     let proof_data = duplicate_proof.pack_proof();
     initialize_and_write_proof(
         config,
-        payer,
         &proof_account,
         ProofType::DuplicateBlockProof,
         &proof_data,
+        rent,
     )
     .await?;
 
     // Submit the violation to the slashing program
+    let payer = config.fee_payer()?;
     let shred_1_merkle_root = layout::get_merkle_root(proof.shred1.as_ref()).unwrap();
     let shred_2_merkle_root = layout::get_merkle_root(proof.shred2.as_ref()).unwrap();
     let shred_1_signature = proof.shred1.as_ref()[..SIGNATURE_BYTES].try_into().unwrap();
@@ -280,7 +285,7 @@ async fn report_duplicate_block_violation(
         &proof_account.pubkey(),
         &instruction_data,
         Some(&payer.pubkey()),
-        &config.rent,
+        rent,
     );
     let transaction = Transaction::new_signed_with_payer(
         &instructions,
@@ -453,17 +458,18 @@ async fn command_display(
 
 async fn initialize_and_write_proof(
     config: &Config,
-    payer: &Arc<dyn Signer>,
     proof_account: &Keypair,
     proof_type: ProofType,
     proof_data: &[u8],
+    rent: &Rent,
 ) -> Result<(), Error> {
     // Initialize account with the record program
+    let payer = config.fee_payer()?;
     let account_length = proof_type
         .proof_account_length()
         .saturating_add(pod_get_packed_len::<RecordData>());
-    let lamports = 1.max(config.rent.minimum_balance(account_length));
-    let signers: [&dyn Signer; 2] = [&**payer, proof_account];
+    let lamports = 1.max(rent.minimum_balance(account_length));
+    let signers: [&dyn Signer; 2] = [&*payer, proof_account];
     let initialize_ix =
         spl_record::instruction::initialize(&proof_account.pubkey(), &payer.pubkey());
     let transaction = Transaction::new_signed_with_payer(
@@ -504,7 +510,7 @@ async fn initialize_and_write_proof(
         let transaction = Transaction::new_signed_with_payer(
             &[write_ix],
             Some(&payer.pubkey()),
-            &[&**payer],
+            &[&*payer],
             config.rpc_client.get_latest_blockhash().await?,
         );
         writes.push(process_transaction(config, transaction));
