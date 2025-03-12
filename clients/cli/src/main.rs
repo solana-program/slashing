@@ -202,7 +202,7 @@ async fn command_attach(
             let transaction = Transaction::new_signed_with_payer(
                 &[close_ix],
                 Some(&payer.pubkey()),
-                &[payer.clone(), proof_account],
+                &[payer.as_ref()],
                 config.rpc_client.get_latest_blockhash().await?,
             );
             if process_transaction(config, transaction).await?.is_some() {
@@ -522,7 +522,7 @@ async fn initialize_and_write_proof(
         let transaction = Transaction::new_signed_with_payer(
             &[write_ix],
             Some(&payer.pubkey()),
-            &[&*payer],
+            &[payer.as_ref()],
             config.rpc_client.get_latest_blockhash().await?,
         );
         writes.push(process_transaction(config, transaction));
