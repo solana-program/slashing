@@ -186,7 +186,9 @@ async fn command_attach(
             .await
             {
                 Ok(true) => reported_violations += 1,
-                Err(e) => eprintln_display(config, format!("Unable to report violation {:?}", e)),
+                Err(e) => eprintln_display(config, format!("
+                Failed to submit duplicate block report for slot {slot}: {:?}, please run the following command to reattempt the report submission:
+                  spl-slashing attach -l <LEDGER> --start-slot {slot}--end-slot {slot}", e)),
                 _ => (),
             }
             starting_slot = slot + 1;
