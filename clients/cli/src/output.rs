@@ -80,7 +80,6 @@ pub struct CloseReportOutput {
     pub reporter: Pubkey,
     #[serde_as(as = "DisplayFromStr")]
     pub destination: Pubkey,
-    #[serde_as(as = "DisplayFromStr")]
     pub lamports: u64,
     #[serde_as(as = "Option<DisplayFromStr>")]
     pub signature: Option<Signature>,
@@ -92,16 +91,12 @@ impl VerboseDisplay for CloseReportOutput {}
 impl Display for CloseReportOutput {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         writeln!(f)?;
-        writeln_name_value(
-            f,
-            "Closed report account ",
-            &self.report_account.to_string(),
-        )?;
+        writeln_name_value(f, "Closed report account", &self.report_account.to_string())?;
         writeln_name_value(f, "  Violator:", &self.pubkey.to_string())?;
         writeln_name_value(f, "  Reporter:", &self.reporter.to_string())?;
         writeln!(
             f,
-            "Reclaimed {} to destination {}",
+            "  Reclaimed {} to destination {}",
             &self.lamports.to_string(),
             &self.destination.to_string()
         )?;
@@ -194,11 +189,11 @@ impl ViolationReportOutput {
         let shred2 = Shred::new_from_serialized_shred(proof.shred2).unwrap();
 
         for (i, shred) in [&shred1, &shred2].iter().enumerate() {
-            write!(w, "    Shred{}: ", i + 1)?;
             writeln!(
                 w,
-                "fec_set_index {}, index {}, shred_type {:?}\n       \
+                "    Shred{}: fec_set_index {}, index {}, shred_type {:?}\n       \
              version {}, merkle_root {:?}, chained_merkle_root {:?}, last_in_slot {}",
+                i + 1,
                 shred.fec_set_index(),
                 shred.index(),
                 shred.shred_type(),
