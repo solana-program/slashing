@@ -97,7 +97,7 @@ pub struct DisplayCli {
     pub node_pubkey: Option<SignerSource>,
 
     /// The reporter whose reports to display
-    #[clap(long = "reporter", value_parser = PUBKEY_PARSER.clone())]
+    #[clap(long, value_parser = PUBKEY_PARSER.clone())]
     pub reporter: Option<SignerSource>,
 }
 
@@ -108,7 +108,7 @@ pub struct CloseCli {
     pub report_account: Option<SignerSource>,
 
     /// The validator whose violation reports to close
-    #[clap(long = "node_pubkey", value_parser = PUBKEY_PARSER.clone())]
+    #[clap(long, value_parser = PUBKEY_PARSER.clone())]
     pub node_pubkey: Option<SignerSource>,
 
     /// The reporter whose reports to close
@@ -116,32 +116,32 @@ pub struct CloseCli {
     pub reporter: Option<SignerSource>,
 
     /// The destination address whose associated reports to close
-    #[clap(long = "destination", value_parser = PUBKEY_PARSER.clone())]
+    #[clap(long, value_parser = PUBKEY_PARSER.clone())]
     pub destination: Option<SignerSource>,
 }
 
 #[derive(Clone, Debug, Args)]
 pub struct AttachCli {
-    /// The ledger to attach to
-    #[clap(short = 'l', long = "ledger")]
+    /// The path to the validator ledger directory to attach to
+    #[clap(short, long)]
     pub ledger: String,
 
     /// The reporting pubkey to publish on a successful report. Defaults to
     /// the default signer
-    #[clap(long = "reporter", value_parser = PUBKEY_PARSER.clone())]
+    #[clap(long, value_parser = PUBKEY_PARSER.clone())]
     pub reporter: Option<SignerSource>,
 
     /// The destination pubkey to credit upon closing a successful report.
     /// Defaults to the default signer
-    #[clap(long = "destination", value_parser = PUBKEY_PARSER.clone())]
+    #[clap(long, value_parser = PUBKEY_PARSER.clone())]
     pub destination: Option<SignerSource>,
 
     /// The start of the slot range to report violations for
-    #[clap(long = "start-slot")]
+    #[clap(long)]
     pub start_slot: Option<Slot>,
 
     /// The end of the slot range to report violations for
-    #[clap(long = "end-slot", conflicts_with = "continuous")]
+    #[clap(long, conflicts_with = "continuous")]
     pub end_slot: Option<Slot>,
 
     /// Specify to continuously check the ledger for new violations.
@@ -151,7 +151,7 @@ pub struct AttachCli {
     #[clap(long)]
     pub continuous: bool,
 
-    #[clap(long = "scan-interval", requires = "continuous")]
+    #[clap(long, requires = "continuous")]
     pub scan_interval: Option<u64>,
 }
 
