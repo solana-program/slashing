@@ -7776,6 +7776,72 @@ dependencies = [
 ]
 
 [[package]]
+name = "solana-slashing-cli"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "bytemuck",
+ "clap 3.2.25",
+ "console",
+ "futures 0.3.31",
+ "lazy_static",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "serde_with",
+ "serial_test",
+ "solana-account-decoder",
+ "solana-clap-v3-utils",
+ "solana-cli-config",
+ "solana-cli-output",
+ "solana-client",
+ "solana-ledger",
+ "solana-logger",
+ "solana-remote-wallet",
+ "solana-sdk",
+ "solana-slashing-program",
+ "solana-system-interface",
+ "solana-test-validator",
+ "solana-transaction-status",
+ "spl-pod",
+ "spl-record",
+ "spl-token",
+ "spl-token-client",
+ "tempfile",
+ "test-case",
+ "tokio",
+]
+
+[[package]]
+name = "solana-slashing-program"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "bitflags 2.9.0",
+ "bytemuck",
+ "lazy_static",
+ "num-derive",
+ "num-traits",
+ "num_enum",
+ "rand 0.9.0",
+ "serde",
+ "serde_bytes",
+ "serde_derive",
+ "serde_with",
+ "solana-client",
+ "solana-entry",
+ "solana-ledger",
+ "solana-program",
+ "solana-program-test",
+ "solana-sdk",
+ "solana-signature",
+ "solana-system-program",
+ "spl-pod",
+ "spl-record",
+ "thiserror 2.0.12",
+]
+
+[[package]]
 name = "solana-slot-hashes"
 version = "2.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8925,72 +8991,6 @@ dependencies = [
  "solana-pubkey",
  "solana-rent",
  "thiserror 1.0.69",
-]
-
-[[package]]
-name = "spl-slashing"
-version = "0.1.0"
-dependencies = [
- "bincode",
- "bitflags 2.9.0",
- "bytemuck",
- "lazy_static",
- "num-derive",
- "num-traits",
- "num_enum",
- "rand 0.9.0",
- "serde",
- "serde_bytes",
- "serde_derive",
- "serde_with",
- "solana-client",
- "solana-entry",
- "solana-ledger",
- "solana-program",
- "solana-program-test",
- "solana-sdk",
- "solana-signature",
- "solana-system-program",
- "spl-pod",
- "spl-record",
- "thiserror 2.0.12",
-]
-
-[[package]]
-name = "spl-slashing-cli"
-version = "0.1.0"
-dependencies = [
- "bincode",
- "bytemuck",
- "clap 3.2.25",
- "console",
- "futures 0.3.31",
- "lazy_static",
- "serde",
- "serde_derive",
- "serde_json",
- "serde_with",
- "serial_test",
- "solana-account-decoder",
- "solana-clap-v3-utils",
- "solana-cli-config",
- "solana-cli-output",
- "solana-client",
- "solana-ledger",
- "solana-logger",
- "solana-remote-wallet",
- "solana-sdk",
- "solana-system-interface",
- "solana-test-validator",
- "solana-transaction-status",
- "spl-pod",
- "spl-record",
- "spl-slashing",
- "spl-token",
- "spl-token-client",
- "tempfile",
- "test-case",
- "tokio",
 ]
 
 [[package]]

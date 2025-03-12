@@ -1,5 +1,5 @@
 [package]
-name = "spl-slashing-cli"
+name = "solana-slashing-cli"
 version = "0.1.0"
 description = "Solana Program Library Slashing Command-line Utility"
 authors = ["Anza Maintainers <maintainers@anza.xyz>"]
@@ -33,7 +33,7 @@ solana-transaction-status = "2.2.0"
 spl-token = { version = "7.0", features = ["no-entrypoint"] }
 lazy_static = "1.4.0"
 spl-token-client = { version = "0.14.0" }
-spl-slashing = { version = "0.1.0", path = "../../program", features = [
+solana-slashing-program = { version = "0.1.0", path = "../../program", features = [
   "no-entrypoint",
 ] }
 spl-record = "0.3.0"

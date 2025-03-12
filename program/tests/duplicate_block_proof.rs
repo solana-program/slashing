@@ -26,7 +26,7 @@ use {
         primitives::PodU64,
     },
     spl_record::{instruction as record, state::RecordData},
-    spl_slashing::{
+    solana_slashing_program::{
         duplicate_block_proof::DuplicateBlockProofData,
         error::SlashingError,
         id,
@@ -44,7 +44,7 @@ const SLOT: Slot = 53084024;
 const EPOCH: Epoch = 42;
 
 fn program_test() -> ProgramTest {
-    let mut program_test = ProgramTest::new("spl_slashing", id(), processor!(process_instruction));
+    let mut program_test = ProgramTest::new("solana_slashing_program", id(), processor!(process_instruction));
     program_test.add_program(
         "spl_record",
         spl_record::id(),
@@ -339,7 +339,7 @@ async fn valid_proof_data() {
             &slot.to_le_bytes(),
             &[u8::from(ProofType::DuplicateBlockProof)],
         ],
-        &spl_slashing::id(),
+        &solana_slashing_program::id(),
     );
     let report_account = context
         .banks_client
@@ -436,7 +436,7 @@ async fn valid_proof_coding() {
             &slot.to_le_bytes(),
             &[u8::from(ProofType::DuplicateBlockProof)],
         ],
-        &spl_slashing::id(),
+        &solana_slashing_program::id(),
     );
     let report_account = context
         .banks_client
@@ -835,7 +835,7 @@ async fn double_report() {
             &slot.to_le_bytes(),
             &[u8::from(ProofType::DuplicateBlockProof)],
         ],
-        &spl_slashing::id(),
+        &solana_slashing_program::id(),
     );
     let report_account = context
         .banks_client
@@ -916,7 +916,7 @@ async fn double_report() {
             &slot.to_le_bytes(),
             &[u8::from(ProofType::DuplicateBlockProof)],
         ],
-        &spl_slashing::id(),
+        &solana_slashing_program::id(),
     );
     let report_account = context
         .banks_client
@@ -970,7 +970,7 @@ async fn close_report_destination_and_early() {
             &slot.to_le_bytes(),
             &[u8::from(ProofType::DuplicateBlockProof)],
         ],
-        &spl_slashing::id(),
+        &solana_slashing_program::id(),
     );
 
     // Trying to create an account with the destination set to the report account

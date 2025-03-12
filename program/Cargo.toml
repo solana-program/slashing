@@ -1,5 +1,5 @@
 [package]
-name = "spl-slashing"
+name = "solana-slashing-program"
 version = "0.1.0"
 description = "Solana Program Library Slashing"
 authors = ["Anza Maintainers <maintainers@anza.xyz>"]

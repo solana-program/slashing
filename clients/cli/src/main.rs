@@ -24,7 +24,7 @@ use {
         primitives::PodU64,
     },
     spl_record::state::RecordData,
-    spl_slashing::{
+    solana_slashing_program::{
         duplicate_block_proof::DuplicateBlockProofData,
         get_violation_report_address,
         instruction::{
@@ -225,7 +225,7 @@ async fn report_duplicate_block_violation(
         .value
     {
         if !report_account.data.is_empty()
-            && spl_slashing::check_id(&report_account.owner)
+            && solana_slashing_program::check_id(&report_account.owner)
             && ViolationReport::version(report_account.data()) > 0
         {
             println_display(
@@ -347,7 +347,7 @@ async fn command_close(
 
     let reports = config
         .rpc_client
-        .get_program_accounts_with_config(&spl_slashing::id(), gpa_config)
+        .get_program_accounts_with_config(&solana_slashing_program::id(), gpa_config)
         .await?;
     let mut early_reports = 0;
 
@@ -428,7 +428,7 @@ async fn command_display(
 
     let reports = config
         .rpc_client
-        .get_program_accounts_with_config(&spl_slashing::id(), gpa_config)
+        .get_program_accounts_with_config(&solana_slashing_program::id(), gpa_config)
         .await?;
 
     let mut displays = vec![];

@@ -13,7 +13,7 @@ use {
         pubkey::Pubkey,
         signature::Signature,
     },
-    spl_slashing::{
+    solana_slashing_program::{
         duplicate_block_proof::DuplicateBlockProofData,
         state::{ProofType, ViolationReport},
     },
