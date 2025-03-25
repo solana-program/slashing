@@ -32,7 +32,6 @@ solana-sdk = "2.2.1"
 solana-transaction-status = "2.2.0"
 spl-token = { version = "7.0", features = ["no-entrypoint"] }
 lazy_static = "1.4.0"
-spl-token-client = { version = "0.14.0" }
 solana-slashing-program = { version = "0.1.0", path = "../../program", features = [
   "no-entrypoint",
 ] }

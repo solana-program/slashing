@@ -7806,7 +7806,6 @@ dependencies = [
  "spl-pod",
  "spl-record",
  "spl-token",
- "spl-token-client",
  "tempfile",
  "test-case",
  "tokio",
@@ -9083,37 +9082,6 @@ dependencies = [
  "spl-token-metadata-interface",
  "spl-transfer-hook-interface",
  "spl-type-length-value",
- "thiserror 2.0.12",
-]
-
-[[package]]
-name = "spl-token-client"
-version = "0.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "94bf4fb4f625f07c07d28ec885c848c2a08900c1e0ad937516b8e55c8ed49434"
-dependencies = [
- "async-trait",
- "bincode",
- "bytemuck",
- "futures 0.3.31",
- "futures-util",
- "solana-banks-interface",
- "solana-cli-output",
- "solana-program-test",
- "solana-rpc-client",
- "solana-rpc-client-api",
- "solana-sdk",
- "spl-associated-token-account-client",
- "spl-elgamal-registry",
- "spl-memo",
- "spl-record",
- "spl-token",
- "spl-token-2022 7.0.0",
- "spl-token-confidential-transfer-proof-extraction",
- "spl-token-confidential-transfer-proof-generation 0.3.0",
- "spl-token-group-interface",
- "spl-token-metadata-interface",
- "spl-transfer-hook-interface",
  "thiserror 2.0.12",
 ]
 
