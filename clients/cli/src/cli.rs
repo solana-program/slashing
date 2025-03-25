@@ -112,7 +112,7 @@ pub struct CloseCli {
     pub node_pubkey: Option<SignerSource>,
 
     /// The reporter whose reports to close
-    #[clap(long = "reporter", value_parser = PUBKEY_PARSER.clone())]
+    #[clap(long, value_parser = PUBKEY_PARSER.clone())]
     pub reporter: Option<SignerSource>,
 
     /// The destination address whose associated reports to close
