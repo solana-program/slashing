@@ -146,7 +146,9 @@ pub struct AttachCli {
 
     /// Specify to continuously check the ledger for new violations.
     /// If specified without `scan_interval`, this will perform a scan once
-    /// a day (roughly 1/2 an epoch).
+    /// every 4 hours, this is chosen based on the default shred storage in
+    /// blockstore (`200M` shreds). Assuming `50k` TPS, ledger can hold 4.5
+    /// hours of shreds.
     /// Cannot be specified with the end slot argument
     #[clap(long)]
     pub continuous: bool,

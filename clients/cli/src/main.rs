@@ -47,8 +47,8 @@ use cli::*;
 mod output;
 use output::*;
 
-// Scan once a day
-const DEFAULT_SCAN_INTERVAL_S: u64 = 86400;
+// Scan once every 4 hours
+const DEFAULT_SCAN_INTERVAL_S: u64 = 4 * 60 * 60;
 
 macro_rules! get_pubkey_from_source {
     ($command_config:expr,  $matches:expr, $wallet_manager:expr, $field:ident) => {
@@ -216,11 +216,14 @@ async fn command_attach(
             return Ok(format!("Reported {} violations", reported_violations));
         };
         drop(blockstore);
-        std::thread::sleep(Duration::from_secs(
-            command_config
-                .scan_interval
-                .unwrap_or(DEFAULT_SCAN_INTERVAL_S),
-        ));
+        let scan_interval = command_config
+            .scan_interval
+            .unwrap_or(DEFAULT_SCAN_INTERVAL_S);
+        println_display(
+            config,
+            format!("Scanning again in {} seconds", scan_interval).to_string(),
+        );
+        std::thread::sleep(Duration::from_secs(scan_interval));
     }
 }
 

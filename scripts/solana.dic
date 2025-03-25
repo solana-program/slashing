@@ -58,4 +58,5 @@ devnet
 testnet
 RPC
 localhost
-
+blockstore
+TPS
