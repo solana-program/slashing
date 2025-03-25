@@ -21,12 +21,7 @@ use {
         transaction::{Transaction, TransactionError},
     },
     solana_signature::SIGNATURE_BYTES,
-    spl_pod::{
-        bytemuck::{pod_from_bytes, pod_get_packed_len},
-        primitives::PodU64,
-    },
-    spl_record::{instruction as record, state::RecordData},
-    spl_slashing::{
+    solana_slashing_program::{
         duplicate_block_proof::DuplicateBlockProofData,
         error::SlashingError,
         id,
@@ -37,6 +32,11 @@ use {
         processor::process_instruction,
         state::{ProofType, SlashingProofData, ViolationReport},
     },
+    spl_pod::{
+        bytemuck::{pod_from_bytes, pod_get_packed_len},
+        primitives::PodU64,
+    },
+    spl_record::{instruction as record, state::RecordData},
     std::{assert_ne, sync::Arc},
 };
 
@@ -44,7 +44,11 @@ const SLOT: Slot = 53084024;
 const EPOCH: Epoch = 42;
 
 fn program_test() -> ProgramTest {
-    let mut program_test = ProgramTest::new("spl_slashing", id(), processor!(process_instruction));
+    let mut program_test = ProgramTest::new(
+        "solana_slashing_program",
+        id(),
+        processor!(process_instruction),
+    );
     program_test.add_program(
         "spl_record",
         spl_record::id(),
@@ -339,7 +343,7 @@ async fn valid_proof_data() {
             &slot.to_le_bytes(),
             &[u8::from(ProofType::DuplicateBlockProof)],
         ],
-        &spl_slashing::id(),
+        &solana_slashing_program::id(),
     );
     let report_account = context
         .banks_client
@@ -436,7 +440,7 @@ async fn valid_proof_coding() {
             &slot.to_le_bytes(),
             &[u8::from(ProofType::DuplicateBlockProof)],
         ],
-        &spl_slashing::id(),
+        &solana_slashing_program::id(),
     );
     let report_account = context
         .banks_client
@@ -835,7 +839,7 @@ async fn double_report() {
             &slot.to_le_bytes(),
             &[u8::from(ProofType::DuplicateBlockProof)],
         ],
-        &spl_slashing::id(),
+        &solana_slashing_program::id(),
     );
     let report_account = context
         .banks_client
@@ -916,7 +920,7 @@ async fn double_report() {
             &slot.to_le_bytes(),
             &[u8::from(ProofType::DuplicateBlockProof)],
         ],
-        &spl_slashing::id(),
+        &solana_slashing_program::id(),
     );
     let report_account = context
         .banks_client
@@ -970,7 +974,7 @@ async fn close_report_destination_and_early() {
             &slot.to_le_bytes(),
             &[u8::from(ProofType::DuplicateBlockProof)],
         ],
-        &spl_slashing::id(),
+        &solana_slashing_program::id(),
     );
 
     // Trying to create an account with the destination set to the report account

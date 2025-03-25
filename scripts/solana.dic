@@ -36,7 +36,7 @@ offchain
 keypair/S
 decrypt/SGD
 lamport/S
-validator/S
+validator/SM
 pubkey/S
 sysvar/S
 timestamp/S
@@ -54,3 +54,9 @@ retransmitter/SM
 FEC
 sigverify
 prefund/GD
+devnet
+testnet
+RPC
+localhost
+blockstore
+TPS
