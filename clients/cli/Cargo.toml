@@ -41,7 +41,7 @@ spl-record = "0.3.0"
 solana-test-validator = "2.2.0"
 serial_test = "3.2.0"
 test-case = "3.3"
-tempfile = "3.16.0"
+tempfile = "3.19.1"
 
 [[bin]]
 name = "spl-slashing"
