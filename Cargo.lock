@@ -7796,7 +7796,7 @@ dependencies = [
 
 [[package]]
 name = "solana-slashing-cli"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "bincode",
  "bytemuck",
@@ -7832,7 +7832,7 @@ dependencies = [
 
 [[package]]
 name = "solana-slashing-program"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "bincode",
  "bitflags 2.9.0",

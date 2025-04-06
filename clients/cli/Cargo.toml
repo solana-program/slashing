@@ -1,6 +1,6 @@
 [package]
 name = "solana-slashing-cli"
-version = "0.1.0"
+version = "1.0.0"
 description = "Solana Program Library Slashing Command-line Utility"
 authors = ["Anza Maintainers <maintainers@anza.xyz>"]
 repository = "https://github.com/solana-program/single-pool"
@@ -32,7 +32,7 @@ solana-sdk = "2.2.1"
 solana-transaction-status = "2.2.0"
 spl-token = { version = "8.0", features = ["no-entrypoint"] }
 lazy_static = "1.4.0"
-solana-slashing-program = { version = "0.1.0", path = "../../program", features = [
+solana-slashing-program = { version = "1.0.0", path = "../../program", features = [
   "no-entrypoint",
 ] }
 spl-record = "0.3.0"
