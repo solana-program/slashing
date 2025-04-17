@@ -11,7 +11,7 @@
   },
   "devDependencies": {
     "@iarna/toml": "^2.2.5",
-    "zx": "^8.5.2"
+    "zx": "^8.5.3"
   },
   "engines": {
     "node": ">=v20.0.0"
