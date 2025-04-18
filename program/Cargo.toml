@@ -36,7 +36,7 @@ solana-system-program = "2.2.0"
 solana-entry = "2.2.0"
 solana-client = "2.2.0"
 spl-record = "0.3.0"
-rand = "0.9.0"
+rand = "0.9.1"
 
 [lib]
 crate-type = ["cdylib", "lib"]
