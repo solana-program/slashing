@@ -261,7 +261,10 @@ pub fn duplicate_block_proof_with_sigverify_and_prefund(
 pub(crate) fn construct_instructions_and_sysvar(
     instruction_data: &DuplicateBlockProofInstructionData,
 ) -> ([Instruction; 3], Vec<u8>) {
-    use solana_sdk::sysvar::instructions::{self, BorrowedAccountMeta, BorrowedInstruction};
+    use {
+        solana_instruction::{BorrowedAccountMeta, BorrowedInstruction},
+        solana_instructions_sysvar::{construct_instructions_data, store_current_index_checked},
+    };
 
     fn borrow_account(account: &AccountMeta) -> BorrowedAccountMeta {
         BorrowedAccountMeta {
@@ -286,9 +289,8 @@ pub(crate) fn construct_instructions_and_sysvar(
     );
     let borrowed_instructions: Vec<BorrowedInstruction> =
         instructions.iter().map(borrow_instruction).collect();
-    let mut instructions_sysvar_data =
-        instructions::construct_instructions_data(&borrowed_instructions);
-    instructions::store_current_index(&mut instructions_sysvar_data, 2);
+    let mut instructions_sysvar_data = construct_instructions_data(&borrowed_instructions);
+    store_current_index_checked(&mut instructions_sysvar_data, 2).unwrap();
     (instructions, instructions_sysvar_data)
 }
 

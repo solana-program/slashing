@@ -417,8 +417,9 @@ pub(crate) mod tests {
         solana_ledger::shred::{
             ProcessShredsStats, ReedSolomonCache, Shred as SolanaShred, Shredder,
         },
-        solana_sdk::{hash::Hash, pubkey::Pubkey, signature::Keypair, system_transaction},
+        solana_sdk::{hash::Hash, pubkey::Pubkey, signature::Keypair},
         solana_signature::Signature,
+        solana_system_transaction as system_transaction,
         std::sync::Arc,
     };
 

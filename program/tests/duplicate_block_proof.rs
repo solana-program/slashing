@@ -17,7 +17,6 @@ use {
         instruction::{Instruction, InstructionError},
         rent::Rent,
         signature::{Keypair, Signer},
-        system_instruction, system_transaction,
         transaction::{Transaction, TransactionError},
     },
     solana_signature::SIGNATURE_BYTES,
@@ -32,6 +31,8 @@ use {
         processor::process_instruction,
         state::{ProofType, SlashingProofData, ViolationReport},
     },
+    solana_system_interface::instruction as system_instruction,
+    solana_system_transaction as system_transaction,
     spl_pod::{
         bytemuck::{pod_from_bytes, pod_get_packed_len},
         primitives::PodU64,
