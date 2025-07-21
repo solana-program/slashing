@@ -61,6 +61,10 @@ runs:
         version: ${{ env.SOLANA_VERSION }}
         cache: true
 
+    - name: Install build deps
+      shell: bash
+      run: sudo apt update && sudo apt install libudev-dev protobuf-compiler libclang-dev -y
+
     - name: Cache Cargo Dependencies
       if: ${{ inputs.cargo-cache-key && !inputs.cargo-cache-fallback-key }}
       uses: actions/cache@v4
