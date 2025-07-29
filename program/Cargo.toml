@@ -40,7 +40,7 @@ solana-system-transaction = "2.2.0"
 solana-entry = "2.2.0"
 solana-client = "2.3.4"
 spl-record = "0.3.0"
-rand = "0.9.1"
+rand = "0.9.2"
 
 [lib]
 crate-type = ["cdylib", "lib"]
