@@ -16,9 +16,10 @@ use {
         program_error::ProgramError,
         pubkey::{Pubkey, PUBKEY_BYTES},
         rent::Rent,
-        system_instruction, system_program, sysvar,
+        sysvar,
     },
     solana_signature::SIGNATURE_BYTES,
+    solana_system_interface::{instruction as system_instruction, program as system_program},
     spl_pod::{
         bytemuck::{pod_from_bytes, pod_get_packed_len},
         primitives::PodU64,

@@ -13,9 +13,9 @@ use {
         program_error::ProgramError,
         pubkey::Pubkey,
         rent::Rent,
-        system_instruction, system_program,
         sysvar::{self, Sysvar},
     },
+    solana_system_interface::{instruction as system_instruction, program as system_program},
     spl_pod::{bytemuck::pod_from_bytes, primitives::PodU64},
     std::{fmt::Display, str::FromStr},
 };
