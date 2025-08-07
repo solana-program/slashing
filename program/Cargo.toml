@@ -28,7 +28,7 @@ serde_bytes = "0.11.17"
 serde_derive = "1.0.210" # must match the serde version, see https://github.com/serde-rs/serde/issues/2584#issuecomment-1685252251
 serde_with = { version = "3.14.0", default-features = false }
 thiserror = "2.0"
-spl-pod = "0.5.1"
+spl-pod = "0.6.0"
 
 [dev-dependencies]
 lazy_static = "1.5.0"
