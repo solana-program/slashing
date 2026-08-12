@@ -340,9 +340,13 @@ impl<'a> Shred<'a> {
             let Ok((proof_offset, proof_size)) = shred.get_proof_offset_and_size() else {
                 return shred.payload;
             };
-            if !shred.resigned {
-                return shred.payload;
-            }
+            // Truncate to the canonical payload end for every shred, not just
+            // resigned ones. For a non-resigned shred `proof_offset + proof_size`
+            // equals the canonical size, so any trailing bytes past it (which the
+            // fixed-offset `merkle_root()` and header getters ignore) are excluded
+            // from the comparison. Without this a shred padded with extra trailing
+            // bytes compares unequal to its unpadded twin and is treated as a
+            // duplicate even though it is the same shred.
             let Some(offset) = proof_offset.checked_add(proof_size) else {
                 return shred.payload;
             };

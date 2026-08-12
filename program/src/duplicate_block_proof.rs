@@ -436,6 +436,63 @@ mod tests {
     }
 
     #[test]
+    fn test_non_canonical_padding_payload_proof_invalid() {
+        // A non-resigned shred padded with extra trailing bytes must not be
+        // accepted as a duplicate of the original shred. Both carry the same
+        // leader signature and merkle root (the fixed-offset merkle_root ignores
+        // the padding), the same slot, index, and type, so the only difference is
+        // the payload length. get_payload truncates to the canonical size, so the
+        // padded and original payloads compare equal and the proof is rejected.
+        let mut rng = rand::rng();
+        let leader = Arc::new(Keypair::new());
+        let leader_pubkey = leader.pubkey();
+        let shredder = Shredder::new(SLOT, PARENT_SLOT, REFERENCE_TICK, VERSION).unwrap();
+        let next_shred_index = rng.random_range(0..32_000);
+
+        // is_last_in_slot = false yields non-resigned merkle shreds (data + coding).
+        let (data_shreds, coding_shreds) = new_rand_shreds(
+            &mut rng,
+            next_shred_index,
+            next_shred_index,
+            10,
+            true, /* merkle_variant */
+            &shredder,
+            &leader,
+            false, /* is_last_in_slot */
+        );
+
+        for shred in [data_shreds[0].clone(), coding_shreds[0].clone()] {
+            let payload = shred.payload().as_ref().to_vec();
+            let mut padded = payload.clone();
+            padded.push(0u8);
+
+            let merkle_root = Shred::new_from_payload(&payload)
+                .unwrap()
+                .merkle_root()
+                .unwrap();
+            let signature: [u8; SIGNATURE_BYTES] =
+                shred.signature().as_ref().try_into().unwrap();
+            let context = DuplicateBlockProofContext {
+                expected_pubkey: &leader_pubkey,
+                expected_shred1_merkle_root: &merkle_root,
+                expected_shred2_merkle_root: &merkle_root,
+                expected_shred1_signature: &signature,
+                expected_shred2_signature: &signature,
+            };
+            let proof_data = DuplicateBlockProofData {
+                shred1: &payload,
+                shred2: &padded,
+            };
+            assert_eq!(
+                proof_data
+                    .verify_proof(context, SLOT, &leader_pubkey)
+                    .unwrap_err(),
+                SlashingError::InvalidPayloadProof,
+            );
+        }
+    }
+
+    #[test]
     fn test_unpack_context() {
         let node_pubkey = Pubkey::new_unique();
         let reporter = Pubkey::new_unique();
